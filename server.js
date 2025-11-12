@@ -40,6 +40,7 @@ const allowedOrigins = [
   "http://localhost:3001",
   "https://sacmtb.com",
   "https://sacmtb-suryadmin.com",
+  "https://sacmtb-surya.onrender.com", // Add your live Render URL too
 ];
 
 // ----------------- Middleware -----------------
@@ -58,7 +59,7 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(morgan("dev"));
 
-// 🧱 Security Headers for embedding safety
+// 🧱 Security Headers
 app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
@@ -127,14 +128,15 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/upload", uploadRoutes);
 
-// ----------------- Serve Frontend (For Render) -----------------
+// ----------------- Serve Frontend (Render Compatible) -----------------
 if (NODE_ENV === "production") {
   const frontendPath = path.join(__dirname, "../frontend/build");
   app.use(express.static(frontendPath));
 
-  app.get("*", (req, res) =>
-    res.sendFile(path.resolve(frontendPath, "index.html"))
-  );
+  // ✅ Express v5 fix: use regex instead of "*"
+  app.get(/.*/, (req, res) => {
+    res.sendFile(path.resolve(frontendPath, "index.html"));
+  });
 } else {
   app.get("/", (req, res) => {
     res.send("🚴‍♂️ SAC MTB Backend Running in Development Mode");
