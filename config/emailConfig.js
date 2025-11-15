@@ -5,13 +5,15 @@ dotenv.config();
 
 // Create transporter
 export const transporter = nodemailer.createTransport({
-  service: "Gmail",
+  host: process.env.EMAIL_HOST,       // smtp.hostinger.com
+  port: process.env.EMAIL_PORT,       // 465 or 587
+  secure: process.env.EMAIL_PORT == 465, // true for 465, false for 587
   auth: {
-    user: process.env.EMAIL_USER, // your Gmail
-    pass: process.env.EMAIL_PASS, // Gmail App Password
+    user: process.env.EMAIL_USER, // support@sacmtb.com
+    pass: process.env.EMAIL_PASS, // Hostinger email password
   },
   tls: {
-    rejectUnauthorized: false, // allow self-signed certs if needed
+    rejectUnauthorized: false,
   },
 });
 
