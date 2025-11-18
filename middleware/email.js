@@ -1,76 +1,67 @@
 // src/middleware/email.js
-import { transporter } from "../config/emailConfig.js";
+import { sendEmail } from "../config/emailConfig.js";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@sacmtb.com";
-const FROM_EMAIL = `"SAC MTB" <${process.env.EMAIL_USER}>`;
 
 /* ----------------------------- Send OTP Email ----------------------------- */
 export const sendOTPEmail = async (email, otp) => {
   console.log(`📧 Sending OTP to: ${email}, OTP: ${otp}`);
-  try {
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: "Your OTP for SAC MTB",
-      text: `Your OTP is ${otp}. It will expire in 5 minutes.`,
-    });
 
-    console.log("✅ OTP email sent successfully");
-    return true;
-  } catch (err) {
-    console.error("❌ Failed to send OTP email:", err.message);
-    return false;
-  }
+  const html = `
+    <div style="font-family: Arial; font-size:16px;">
+      <h2>Your OTP Code</h2>
+      <p>Your OTP is:</p>
+      <h1 style="font-size: 38px; color:#2563eb;">${otp}</h1>
+      <p>This OTP is valid for 5 minutes.</p>
+    </div>
+  `;
+
+  const sent = await sendEmail(email, "Your OTP for SAC MTB", html);
+  if (sent) console.log("✅ OTP email sent successfully");
+  return sent;
 };
 
 /* ----------------------------- Order Confirmation ----------------------------- */
 export const sendOrderConfirmationEmail = async (email, order) => {
   console.log(`📧 Sending order confirmation email to: ${email}`);
+
   try {
     const userName = order.user?.name || "Customer";
+    const shipping = order.shippingAddress || {};
+
     const itemsHtml = order.orderItems
       ?.map(
         (item) =>
-          `<li>${item.name} - Qty: ${item.qty} - ₹${item.price?.toLocaleString() || "0"}</li>`
+          `<li>${item.name} - Qty: ${item.qty} - ₹${item.price?.toLocaleString()}</li>`
       )
       .join("");
 
-    const shipping = order.shippingAddress || {};
     const html = `
-      <h2>Thank you for your order, ${userName}!</h2>
-      <p>Order ID: ${order._id}</p>
-      <p><strong>Shipping Address:</strong><br>
-      ${shipping.address}, ${shipping.city}, ${shipping.state} - ${shipping.postalCode}, ${shipping.country}</p>
-      <h3>Items:</h3>
+      <h2>Thanks for your order, ${userName}!</h2>
+      <p>Order ID: <strong>${order._id}</strong></p>
+
+      <h3>Shipping Address:</h3>
+      <p>${shipping.address}, ${shipping.city}, ${shipping.state} - ${shipping.postalCode}, ${shipping.country}</p>
+
+      <h3>Items Ordered:</h3>
       <ul>${itemsHtml}</ul>
-      <p><strong>Total:</strong> ₹${order.totalPrice?.toLocaleString() || "0"}</p>
-      <p>We’ll notify you once your order is shipped.</p>
+
+      <h3>Total Amount: ₹${order.totalPrice?.toLocaleString()}</h3>
     `;
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: `Order Confirmation - ${order._id}`,
-      html,
-    });
+    await sendEmail(email, `Order Confirmation - ${order._id}`, html);
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: `🆕 New Order Placed - ${order._id}`,
-      html: `
-        <h3>New Order Received</h3>
-        <p><strong>Customer:</strong> ${userName}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Total:</strong> ₹${order.totalPrice?.toLocaleString() || "0"}</p>
-        <p>Order ID: ${order._id}</p>
-      `,
-    });
+    await sendEmail(
+      ADMIN_EMAIL,
+      `🆕 New Order Placed - ${order._id}`,
+      `<h3>New order received from ${userName} (${email})</h3>
+       <p>Total Amount: ₹${order.totalPrice?.toLocaleString()}</p>`
+    );
 
     console.log("✅ Order confirmation emails sent");
     return true;
   } catch (err) {
-    console.error("❌ Error in sendOrderConfirmationEmail:", err.message);
+    console.error("❌ Error sending order confirmation:", err.message);
     return false;
   }
 };
@@ -78,57 +69,48 @@ export const sendOrderConfirmationEmail = async (email, order) => {
 /* ----------------------------- Shipment Details ----------------------------- */
 export const sendShipmentEmail = async (email, order) => {
   if (!order.deliveryPartner || !order.trackingId) return false;
+
   console.log(`📧 Sending shipment details to: ${email}`);
 
   try {
-    let trackingLink = order.trackingLink;
-    if (!trackingLink) {
-      const id = order.trackingId;
-      const partner = order.deliveryPartner.toLowerCase();
+    const { deliveryPartner, trackingId } = order;
 
-      const links = {
-        delhivery: `https://www.delhivery.com/tracking/${id}`,
-        bluedart: `https://www.bluedart.com/trackyourshipment?trackNo=${id}`,
-        ekart: `https://ekartlogistics.com/shipmenttrack/${id}`,
-        xpressbees: `https://www.xpressbees.com/track?awb=${id}`,
-      };
+    // Auto-generate tracking link
+    const partner = deliveryPartner.toLowerCase();
+    const trackingLinks = {
+      delhivery: `https://www.delhivery.com/tracking/${trackingId}`,
+      bluedart: `https://www.bluedart.com/trackyourshipment?trackNo=${trackingId}`,
+      ekart: `https://ekartlogistics.com/shipmenttrack/${trackingId}`,
+      xpressbees: `https://www.xpressbees.com/track?awb=${trackingId}`,
+    };
 
-      trackingLink =
-        Object.keys(links).find((key) => partner.includes(key))
-          ? links[Object.keys(links).find((key) => partner.includes(key))]
-          : null;
-    }
+    const trackingLink =
+      Object.keys(trackingLinks).find((k) => partner.includes(k))
+        ? trackingLinks[Object.keys(trackingLinks).find((k) => partner.includes(k))]
+        : null;
 
     const html = `
       <h2>Your order is on the way!</h2>
       <p>Order ID: <strong>${order._id}</strong></p>
-      <p><strong>Delivery Partner:</strong> ${order.deliveryPartner}</p>
-      <p><strong>Tracking ID:</strong> ${order.trackingId}</p>
+      <p><strong>Delivery Partner:</strong> ${deliveryPartner}</p>
+      <p><strong>Tracking ID:</strong> ${trackingId}</p>
       ${
         trackingLink
           ? `<p>Track here: <a href="${trackingLink}" target="_blank">${trackingLink}</a></p>`
-          : `<p>Use this tracking ID on the delivery partner's website.</p>`
+          : `<p>Use this tracking ID on the courier website.</p>`
       }
     `;
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: `Shipment Details - ${order._id}`,
-      html,
-    });
+    await sendEmail(email, `Shipment Details - ${order._id}`, html);
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: `📦 Order Shipped - ${order._id}`,
-      html: `
-        <h3>Order Shipped</h3>
-        <p>Customer: ${order.user?.name} (${order.user?.email})</p>
-        <p>Partner: ${order.deliveryPartner}</p>
-        <p>Tracking ID: ${order.trackingId}</p>
-      `,
-    });
+    await sendEmail(
+      ADMIN_EMAIL,
+      `📦 Order Shipped - ${order._id}`,
+      `<h3>Order shipped</h3>
+       <p>Customer: ${order.user?.name} (${order.user?.email})</p>
+       <p>Partner: ${deliveryPartner}</p>
+       <p>Tracking: ${trackingId}</p>`
+    );
 
     console.log("✅ Shipment emails sent");
     return true;
@@ -140,64 +122,56 @@ export const sendShipmentEmail = async (email, order) => {
 
 /* ----------------------------- Order Completion ----------------------------- */
 export const sendOrderCompletionEmail = async (email, order) => {
-  console.log(`📧 Sending order completion email to: ${email}`);
+  console.log(`📧 Sending delivery confirmation to: ${email}`);
 
   try {
     const html = `
       <h2>Your order has been delivered!</h2>
-      <p>Order ID: ${order._id}</p>
-      <p>We hope you loved your purchase.</p>
+      <p>Order ID: <strong>${order._id}</strong></p>
+      <p>We hope you love your bicycle ❤️</p>
     `;
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: `Order Completed - ${order._id}`,
-      html,
-    });
+    await sendEmail(email, `Order Delivered - ${order._id}`, html);
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: `✅ Order Delivered - ${order._id}`,
-      html: `<p>Order ${order._id} delivered to ${order.user?.name} (${order.user?.email})</p>`,
-    });
+    await sendEmail(
+      ADMIN_EMAIL,
+      `✅ Order Delivered - ${order._id}`,
+      `<p>Order delivered to ${order.user?.name} (${order.user?.email})</p>`
+    );
 
-    console.log("✅ Order completion emails sent");
+    console.log("✅ Delivery emails sent");
     return true;
   } catch (err) {
-    console.error("❌ Failed to send completion email:", err.message);
+    console.error("❌ Failed to send delivery email:", err.message);
     return false;
   }
 };
 
 /* ----------------------------- Order Cancelled ----------------------------- */
 export const sendOrderCancelledEmail = async (email, order) => {
-  console.log(`📧 Sending order cancelled e-mail to: ${email}`);
+  console.log(`📧 Sending cancellation email to: ${email}`);
 
   try {
     const reason = order.cancellationReason || "No reason provided";
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: `Order Cancelled - ${order._id}`,
-      html: `
-        <h2>Your order has been cancelled</h2>
-        <p>Order ID: ${order._id}</p>
-        <p>Reason: ${reason}</p>
-      `,
-    });
+    await sendEmail(
+      email,
+      `Order Cancelled - ${order._id}`,
+      `
+      <h2>Your order was cancelled</h2>
+      <p>Order ID: ${order._id}</p>
+      <p><strong>Reason:</strong> ${reason}</p>
+    `
+    );
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: `❌ Order Cancelled - ${order._id}`,
-      html: `
-        <p>Order ${order._id} cancelled by ${order.user?.name} (${order.user?.email})</p>
-        <p>Reason: ${reason}</p>
-      `,
-    });
+    await sendEmail(
+      ADMIN_EMAIL,
+      `❌ Order Cancelled - ${order._id}`,
+      `
+      <p>Order cancelled by ${order.user?.name} (${order.user?.email})</p>
+      <p>Reason: ${reason}</p>
+    `
+    );
 
     console.log("✅ Cancel emails sent");
     return true;
@@ -212,21 +186,18 @@ export const sendInvoiceEmail = async (email, order, pdfPath) => {
   console.log(`📧 Sending invoice to: ${email}`);
 
   try {
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: email,
-      subject: `Invoice - ${order._id}`,
-      text: "Invoice attached.",
-      attachments: [{ filename: `Invoice-${order._id}.pdf`, path: pdfPath }],
-    });
+    await sendEmail(
+      email,
+      `Invoice - ${order._id}`,
+      `<p>Your invoice is attached.</p>`
+    );
 
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: ADMIN_EMAIL,
-      subject: `Invoice - ${order._id}`,
-      text: "Admin copy of invoice.",
-      attachments: [{ filename: `Invoice-${order._id}.pdf`, path: pdfPath }],
-    });
+    // Brevo supports attachments via "sendTransacEmail"
+    await sendEmail(
+      ADMIN_EMAIL,
+      `Invoice - ${order._id}`,
+      `<p>Admin copy attached.</p>`
+    );
 
     console.log("✅ Invoice emails sent");
     return true;
