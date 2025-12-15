@@ -9,6 +9,7 @@ import morgan from "morgan";
 import bcrypt from "bcryptjs";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 import connectDB from "./config/db.js";
 import User from "./models/userModel.js";
 
@@ -29,7 +30,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ----------------- Connect to DB -----------------
-connectDB();
+connectDB().catch((err) => {
+  console.error("❌ MongoDB connection failed on startup:", err);
+  process.exit(1);
+});
 
 // ----------------- Express App -----------------
 const app = express();
@@ -44,10 +48,11 @@ const allowedOrigins = [
 ];
 
 // ----------------- Middleware -----------------
+// CORS
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests without origin (e.g., Postman)
+      // Allow requests without origin (e.g., Postman, server-to-server)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("CORS not allowed for this origin"));
@@ -56,7 +61,19 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "10mb" }));
+// Capture raw body for webhook verification while also parsing JSON for other routes.
+// The verify function stores raw body only when content-type is application/json.
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, res, buf) => {
+      // store raw body for webhook verification (string or Buffer)
+      // We'll use this in the webhook route: req.rawBody
+      req.rawBody = buf;
+    },
+  })
+);
+
 app.use(morgan("dev"));
 
 // 🧱 Security Headers
@@ -92,31 +109,47 @@ const ensureAdminExists = async () => {
 };
 
 // ----------------- Razorpay webhook -----------------
-app.post(
-  "/api/razorpay/webhook",
-  express.raw({ type: "application/json" }),
-  (req, res) => {
-    try {
-      const crypto = require("crypto");
-      const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-      const signature = crypto
-        .createHmac("sha256", secret)
-        .update(req.body)
-        .digest("hex");
-
-      if (signature === req.headers["x-razorpay-signature"]) {
-        console.log("✅ Razorpay Webhook verified:", req.body);
-        res.status(200).json({ success: true });
-      } else {
-        console.log("❌ Invalid Razorpay webhook signature");
-        res.status(400).json({ success: false });
-      }
-    } catch (error) {
-      console.error("Webhook Error:", error);
-      res.status(500).json({ success: false });
+/**
+ * IMPORTANT NOTES:
+ * - Razorpay requires the exact raw request body (bytes) to compute signature.
+ * - We stored the raw body in req.rawBody in the express.json verify middleware above.
+ * - Make sure process.env.RAZORPAY_WEBHOOK_SECRET is set to the value shown in Razorpay webhook settings.
+ */
+app.post("/api/razorpay/webhook", (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error("❌ Missing RAZORPAY_WEBHOOK_SECRET env var");
+      return res.status(500).json({ success: false, message: "Webhook secret not configured" });
     }
+
+    const signature = req.headers["x-razorpay-signature"];
+    if (!signature) {
+      console.warn("❌ Missing x-razorpay-signature header");
+      return res.status(400).json({ success: false, message: "Missing signature header" });
+    }
+
+    // Use the raw body bytes exactly as sent
+    const raw = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+    const expected = crypto.createHmac("sha256", secret).update(raw).digest("hex");
+
+    if (expected !== signature) {
+      console.warn("❌ Invalid Razorpay webhook signature");
+      return res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+
+    // At this point the webhook is verified. You can process payload:
+    // req.body contains parsed JSON because express.json ran earlier.
+    console.log("✅ Razorpay Webhook verified:", req.body?.event || "[no event field]");
+
+    // TODO: pass the payload to your order controller's webhook handler or process here
+    // e.g., razorpayWebhookHandler(req, res) or push to a job queue
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Webhook Error:", error);
+    return res.status(500).json({ success: false });
   }
-);
+});
 
 // ----------------- API Routes -----------------
 app.use("/api/orders", orderRoutes);
@@ -133,7 +166,7 @@ if (NODE_ENV === "production") {
   const frontendPath = path.join(__dirname, "../frontend/build");
   app.use(express.static(frontendPath));
 
-  // ✅ Express v5 fix: use regex instead of "*"
+  // Express catch-all route for SPA
   app.get(/.*/, (req, res) => {
     res.sendFile(path.resolve(frontendPath, "index.html"));
   });
@@ -147,6 +180,6 @@ if (NODE_ENV === "production") {
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT} in ${NODE_ENV} mode`);
   await ensureAdminExists();
-  console.log("✅ MongoDB Connected Successfully");
-  console.log("✅ Email ENV Check:", process.env.EMAIL_HOST, process.env.EMAIL_USER);
+  console.log("✅ MongoDB Connected Successfully (if connectDB succeeded earlier)");
+  console.log("✅ Email ENV Check:", process.env.EMAIL_HOST || "N/A", process.env.EMAIL_USER || "N/A");
 });
