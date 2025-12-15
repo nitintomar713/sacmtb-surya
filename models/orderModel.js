@@ -93,11 +93,11 @@ const orderSchema = new mongoose.Schema(
       signature: String,
     },
 
-    paymentMethod: {
-      type: String,
-      enum: ["COD", "Online"],
-      required: true,
-    },
+paymentMethod: {
+  type: String,
+  enum: ["COD", "ONLINE"],
+  required: true,
+},
 
     /* ================= PRICING ================= */
     itemsPrice: {
