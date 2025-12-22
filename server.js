@@ -44,6 +44,7 @@ const allowedOrigins = [
   "http://localhost:3001",
   "https://sacmtb.com",
   "https://sacmtb-suryadmin.com",
+  "https://suryaadmin.sacmtb.com",
   "https://sacmtb-surya.onrender.com", // Add your live Render URL too
 ];
 
