@@ -1,42 +1,68 @@
 import express from "express";
 import multer from "multer";
-import cloudinary from "../config/cloudinary.js";
 import Product from "../models/productModel.js";
-import streamifier from "streamifier";
 import NodeCache from "node-cache";
 
 const router = express.Router();
-const cache = new NodeCache({ stdTTL: 300 }); // 5 min cache
+const cache = new NodeCache({ stdTTL: 300 });
 
-// =======================
-// Multer Setup
-// =======================
+/* ===============================
+   MULTER
+================================ */
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-// ===========================================================
-// 🛍️ PRODUCT ROUTES (OPTIMIZED)
-// ===========================================================
+/* ======================================================
+   GET PRODUCTS
+   Supports:
+   category
+   type
+   search
+   pagination
+====================================================== */
 
-// ✅ Get products with pagination + filter + cache
 router.get("/", async (req, res) => {
   try {
-    const page = Number(req.query.page) || 1;
+
+    let page = Number(req.query.page) || 1;
+    if (page < 1) page = 1;
+
     const limit = 12;
     const skip = (page - 1) * limit;
 
-    const category = req.query.category;
-    const keyword = req.query.search;
+    const { category, type, search } = req.query;
 
     const filter = {};
 
-    if (category) filter.category = category;
-    if (keyword)
-      filter.name = { $regex: keyword, $options: "i" };
+    /* ===============================
+       CATEGORY FILTER
+    =============================== */
 
-    const cacheKey = `products-${page}-${category}-${keyword}`;
+    if (category) {
+      filter.category = category;
+    }
+
+    /* ===============================
+       TYPE FILTER
+    =============================== */
+
+    if (type) {
+      filter.type = { $regex: `^${type}$`, $options: "i" };
+    }
+
+    /* ===============================
+       SEARCH FILTER
+    =============================== */
+
+    if (search) {
+      filter.name = { $regex: search, $options: "i" };
+    }
+
+    const cacheKey = `products-${page}-${category || "all"}-${type || "all"}-${search || "none"}`;
+
     const cached = cache.get(cacheKey);
 
     if (cached) {
@@ -44,96 +70,205 @@ router.get("/", async (req, res) => {
     }
 
     const products = await Product.find(filter)
-      .select("name price image category stock createdAt")
+      .select(
+        "name price discountPrice imageUrls category type stock isFeatured createdAt"
+      )
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 })
       .lean();
 
-    cache.set(cacheKey, products);
+    const total = await Product.countDocuments(filter);
 
-    res.status(200).json(products);
+    const response = {
+      products,
+      total,
+      page,
+      pages: Math.ceil(total / limit)
+    };
+
+    cache.set(cacheKey, response);
+
+    res.status(200).json(response);
+
   } catch (error) {
+
     console.error("❌ Error fetching products:", error);
-    res.status(500).json({ message: "Error fetching products" });
+
+    res.status(500).json({
+      message: "Error fetching products"
+    });
+
   }
 });
 
-// ✅ Get single product (optimized)
+/* ======================================================
+   GET SINGLE PRODUCT
+====================================================== */
+
 router.get("/:id", async (req, res) => {
+
   try {
+
     const cacheKey = `product-${req.params.id}`;
+
     const cached = cache.get(cacheKey);
 
     if (cached) {
       return res.status(200).json(cached);
     }
 
-    const product = await Product.findById(req.params.id)
-      .lean();
+    const product = await Product.findById(req.params.id).lean();
 
-    if (!product)
-      return res.status(404).json({ message: "Product not found" });
+    if (!product) {
+      return res.status(404).json({
+        message: "Product not found"
+      });
+    }
 
     cache.set(cacheKey, product);
 
     res.status(200).json(product);
+
   } catch (error) {
+
     console.error("❌ Error fetching product:", error);
-    res.status(500).json({ message: "Error fetching product" });
+
+    res.status(500).json({
+      message: "Error fetching product"
+    });
+
   }
+
 });
 
-// ✅ Create product
+/* ======================================================
+   CREATE PRODUCT
+====================================================== */
+
 router.post("/", async (req, res) => {
+
   try {
-    if (!req.body.name || !req.body.price)
-      return res.status(400).json({ message: "Name and price required" });
 
-    const product = await Product.create(req.body);
+    const {
+      name,
+      price,
+      category,
+      type,
+      specifications
+    } = req.body;
 
-    cache.flushAll(); // clear cache after new product
+    if (!name || !price || !category || !type) {
+
+      return res.status(400).json({
+        message: "Name, price, category and type are required"
+      });
+
+    }
+
+    /* ===============================
+       FIX SPECIFICATIONS MAP
+    =============================== */
+
+    let specs = specifications;
+
+    if (typeof specifications === "string") {
+      specs = JSON.parse(specifications);
+    }
+
+    const product = await Product.create({
+      ...req.body,
+      specifications: specs
+    });
+
+    cache.flushAll();
 
     res.status(201).json(product);
+
   } catch (error) {
+
     console.error("❌ Error creating product:", error);
-    res.status(500).json({ message: "Error creating product" });
+
+    res.status(500).json({
+      message: "Error creating product"
+    });
+
   }
+
 });
 
-// ✅ Update product
+/* ======================================================
+   UPDATE PRODUCT
+====================================================== */
+
 router.put("/:id", async (req, res) => {
+
   try {
+
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true }
+      { $set: req.body },
+      { new: true, runValidators: true }
     ).lean();
 
-    if (!updated)
-      return res.status(404).json({ message: "Product not found" });
+    if (!updated) {
+
+      return res.status(404).json({
+        message: "Product not found"
+      });
+
+    }
 
     cache.flushAll();
 
     res.status(200).json(updated);
+
   } catch (error) {
+
     console.error("❌ Error updating product:", error);
-    res.status(500).json({ message: "Error updating product" });
+
+    res.status(500).json({
+      message: "Error updating product"
+    });
+
   }
+
 });
 
-// ✅ Delete product
+/* ======================================================
+   DELETE PRODUCT
+====================================================== */
+
 router.delete("/:id", async (req, res) => {
+
   try {
-    await Product.findByIdAndDelete(req.params.id);
+
+    const deleted = await Product.findByIdAndDelete(req.params.id);
+
+    if (!deleted) {
+
+      return res.status(404).json({
+        message: "Product not found"
+      });
+
+    }
 
     cache.flushAll();
 
-    res.status(200).json({ message: "Product deleted successfully" });
+    res.status(200).json({
+      message: "Product deleted successfully"
+    });
+
   } catch (error) {
+
     console.error("❌ Error deleting product:", error);
-    res.status(500).json({ message: "Error deleting product" });
+
+    res.status(500).json({
+      message: "Error deleting product"
+    });
+
   }
+
 });
 
 export default router;
