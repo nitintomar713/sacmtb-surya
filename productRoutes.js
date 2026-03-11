@@ -25,6 +25,7 @@ const upload = multer({
 ====================================================== */
 
 router.get("/", async (req, res) => {
+
   try {
 
     let page = Number(req.query.page) || 1;
@@ -42,7 +43,10 @@ router.get("/", async (req, res) => {
     =============================== */
 
     if (category) {
-      filter.category = category;
+      filter.category = {
+        $regex: `^${category}$`,
+        $options: "i"
+      };
     }
 
     /* ===============================
@@ -50,7 +54,10 @@ router.get("/", async (req, res) => {
     =============================== */
 
     if (type) {
-      filter.type = { $regex: `^${type}$`, $options: "i" };
+      filter.type = {
+        $regex: `^${type}$`,
+        $options: "i"
+      };
     }
 
     /* ===============================
@@ -58,7 +65,10 @@ router.get("/", async (req, res) => {
     =============================== */
 
     if (search) {
-      filter.name = { $regex: search, $options: "i" };
+      filter.name = {
+        $regex: search,
+        $options: "i"
+      };
     }
 
     const cacheKey = `products-${page}-${category || "all"}-${type || "all"}-${search || "none"}`;
@@ -100,6 +110,7 @@ router.get("/", async (req, res) => {
     });
 
   }
+
 });
 
 /* ======================================================
@@ -165,10 +176,6 @@ router.post("/", async (req, res) => {
       });
 
     }
-
-    /* ===============================
-       FIX SPECIFICATIONS MAP
-    =============================== */
 
     let specs = specifications;
 
