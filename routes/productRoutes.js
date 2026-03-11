@@ -1,145 +1,281 @@
 import express from "express";
 import multer from "multer";
-import cloudinary from "../config/cloudinary.js";
 import Product from "../models/productModel.js";
-import streamifier from "streamifier";
+import NodeCache from "node-cache";
 
 const router = express.Router();
+const cache = new NodeCache({ stdTTL: 300 });
 
-// ✅ Memory storage & file size limit
+/* ===============================
+   MULTER
+================================ */
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-// ✅ Confirm Cloudinary configuration
-console.log("☁️ Cloudinary configured:", cloudinary.config().cloud_name);
+/* ======================================================
+   GET PRODUCTS
+   Supports:
+   category
+   type
+   search
+   pagination
+====================================================== */
 
-
-// ===========================================================
-// 🛍️ PRODUCT CRUD ROUTES
-// ===========================================================
-
-// ✅ Get all products
 router.get("/", async (req, res) => {
+
   try {
-    const products = await Product.find({});
-    res.status(200).json(products);
+
+    let page = Number(req.query.page) || 1;
+    if (page < 1) page = 1;
+
+    const limit = 12;
+    const skip = (page - 1) * limit;
+
+    const { category, type, search } = req.query;
+
+    const filter = {};
+
+    /* ===============================
+       CATEGORY FILTER
+    =============================== */
+
+    if (category) {
+      filter.category = {
+        $regex: `^${category}$`,
+        $options: "i"
+      };
+    }
+
+    /* ===============================
+       TYPE FILTER
+    =============================== */
+
+    if (type) {
+      filter.type = {
+        $regex: `^${type}$`,
+        $options: "i"
+      };
+    }
+
+    /* ===============================
+       SEARCH FILTER
+    =============================== */
+
+    if (search) {
+      filter.name = {
+        $regex: search,
+        $options: "i"
+      };
+    }
+
+    const cacheKey = `products-${page}-${category || "all"}-${type || "all"}-${search || "none"}`;
+
+    const cached = cache.get(cacheKey);
+
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    const products = await Product.find(filter)
+      .select(
+        "name price discountPrice imageUrls category type stock isFeatured createdAt"
+      )
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const total = await Product.countDocuments(filter);
+
+    const response = {
+      products,
+      total,
+      page,
+      pages: Math.ceil(total / limit)
+    };
+
+    cache.set(cacheKey, response);
+
+    res.status(200).json(response);
+
   } catch (error) {
+
     console.error("❌ Error fetching products:", error);
-    res.status(500).json({ message: "Error fetching products" });
-  }
-});
 
-// ✅ Get single product
-router.get("/:id", async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    res.status(200).json(product);
-  } catch (error) {
-    console.error("❌ Error fetching product:", error);
-    res.status(500).json({ message: "Error fetching product" });
-  }
-});
-
-// ✅ Create product
-router.post("/", async (req, res) => {
-  try {
-    if (!req.body.name || !req.body.price)
-      return res.status(400).json({ message: "Name and price are required" });
-
-    const product = await Product.create(req.body);
-    res.status(201).json(product);
-  } catch (error) {
-    console.error("❌ Error creating product:", error);
-    res.status(500).json({ message: "Error creating product" });
-  }
-});
-
-// ✅ Update product
-router.put("/:id", async (req, res) => {
-  try {
-    const updated = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!updated) return res.status(404).json({ message: "Product not found" });
-    res.status(200).json(updated);
-  } catch (error) {
-    console.error("❌ Error updating product:", error);
-    res.status(500).json({ message: "Error updating product" });
-  }
-});
-
-// ✅ Delete product
-router.delete("/:id", async (req, res) => {
-  try {
-    await Product.findByIdAndDelete(req.params.id);
-    res.status(200).json({ message: "Product deleted successfully" });
-  } catch (error) {
-    console.error("❌ Error deleting product:", error);
-    res.status(500).json({ message: "Error deleting product" });
-  }
-});
-
-// ===========================================================
-// ☁️ CLOUDINARY UPLOADS
-// ===========================================================
-
-// 🟢 Upload multiple images
-router.post("/upload-images", upload.array("images", 5), async (req, res) => {
-  try {
-    if (!req.files?.length) return res.status(400).json({ message: "No images provided" });
-
-    const uploadPromises = req.files.map(
-      (file) =>
-        new Promise((resolve, reject) => {
-          const stream = cloudinary.uploader.upload_stream(
-            {
-              folder: "sac_products",
-              resource_type: "image",
-              transformation: [{ width: 1000, crop: "limit" }],
-            },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result.secure_url);
-            }
-          );
-          streamifier.createReadStream(file.buffer).pipe(stream);
-        })
-    );
-
-    const imageUrls = await Promise.all(uploadPromises);
-    res.status(200).json({ success: true, message: "Images uploaded", imageUrls });
-  } catch (error) {
-    console.error("❌ Image upload failed:", error);
-    res.status(500).json({ message: "Image upload failed", error: error.message });
-  }
-});
-
-// 🟢 Upload single video
-router.post("/upload-video", upload.single("video"), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ message: "No video provided" });
-
-    const videoUrl = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: "sac_videos",
-          resource_type: "video",
-          chunk_size: 6000000,
-        },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result.secure_url);
-        }
-      );
-      streamifier.createReadStream(req.file.buffer).pipe(stream);
+    res.status(500).json({
+      message: "Error fetching products"
     });
 
-    res.status(200).json({ success: true, videoUrl });
-  } catch (error) {
-    console.error("❌ Video upload failed:", error);
-    res.status(500).json({ message: "Video upload failed", error: error.message });
   }
+
+});
+
+/* ======================================================
+   GET SINGLE PRODUCT
+====================================================== */
+
+router.get("/:id", async (req, res) => {
+
+  try {
+
+    const cacheKey = `product-${req.params.id}`;
+
+    const cached = cache.get(cacheKey);
+
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    const product = await Product.findById(req.params.id).lean();
+
+    if (!product) {
+      return res.status(404).json({
+        message: "Product not found"
+      });
+    }
+
+    cache.set(cacheKey, product);
+
+    res.status(200).json(product);
+
+  } catch (error) {
+
+    console.error("❌ Error fetching product:", error);
+
+    res.status(500).json({
+      message: "Error fetching product"
+    });
+
+  }
+
+});
+
+/* ======================================================
+   CREATE PRODUCT
+====================================================== */
+
+router.post("/", async (req, res) => {
+
+  try {
+
+    const {
+      name,
+      price,
+      category,
+      type,
+      specifications
+    } = req.body;
+
+    if (!name || !price || !category || !type) {
+
+      return res.status(400).json({
+        message: "Name, price, category and type are required"
+      });
+
+    }
+
+    let specs = specifications;
+
+    if (typeof specifications === "string") {
+      specs = JSON.parse(specifications);
+    }
+
+    const product = await Product.create({
+      ...req.body,
+      specifications: specs
+    });
+
+    cache.flushAll();
+
+    res.status(201).json(product);
+
+  } catch (error) {
+
+    console.error("❌ Error creating product:", error);
+
+    res.status(500).json({
+      message: "Error creating product"
+    });
+
+  }
+
+});
+
+/* ======================================================
+   UPDATE PRODUCT
+====================================================== */
+
+router.put("/:id", async (req, res) => {
+
+  try {
+
+    const updated = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: req.body },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updated) {
+
+      return res.status(404).json({
+        message: "Product not found"
+      });
+
+    }
+
+    cache.flushAll();
+
+    res.status(200).json(updated);
+
+  } catch (error) {
+
+    console.error("❌ Error updating product:", error);
+
+    res.status(500).json({
+      message: "Error updating product"
+    });
+
+  }
+
+});
+
+/* ======================================================
+   DELETE PRODUCT
+====================================================== */
+
+router.delete("/:id", async (req, res) => {
+
+  try {
+
+    const deleted = await Product.findByIdAndDelete(req.params.id);
+
+    if (!deleted) {
+
+      return res.status(404).json({
+        message: "Product not found"
+      });
+
+    }
+
+    cache.flushAll();
+
+    res.status(200).json({
+      message: "Product deleted successfully"
+    });
+
+  } catch (error) {
+
+    console.error("❌ Error deleting product:", error);
+
+    res.status(500).json({
+      message: "Error deleting product"
+    });
+
+  }
+
 });
 
 export default router;
