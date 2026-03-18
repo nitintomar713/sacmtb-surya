@@ -1,6 +1,4 @@
-// models/reviewModel.js
 import mongoose from "mongoose";
-import Product from "./productModel.js";
 
 const reviewSchema = new mongoose.Schema(
   {
@@ -12,6 +10,7 @@ const reviewSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
     },
     name: {
       type: String,
@@ -31,7 +30,11 @@ const reviewSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// 🧮 Function to calculate average rating and update product
+/* ================= INDEXES ================= */
+reviewSchema.index({ productId: 1 });
+reviewSchema.index({ productId: 1, userId: 1 }, { unique: true });
+
+/* ================= CALCULATE RATING ================= */
 async function calculateAverageRating(productId) {
   const result = await mongoose.model("Review").aggregate([
     { $match: { productId } },
@@ -44,9 +47,11 @@ async function calculateAverageRating(productId) {
     },
   ]);
 
+  const Product = mongoose.model("Product");
+
   if (result.length > 0) {
     await Product.findByIdAndUpdate(productId, {
-      rating: result[0].averageRating.toFixed(1),
+      rating: Number(result[0].averageRating.toFixed(1)),
       numReviews: result[0].numReviews,
     });
   } else {
@@ -57,14 +62,20 @@ async function calculateAverageRating(productId) {
   }
 }
 
-// 🧩 Hooks to auto-update product after save/delete
+/* ================= HOOKS ================= */
+
+// After save
 reviewSchema.post("save", async function () {
   await calculateAverageRating(this.productId);
 });
 
-reviewSchema.post("remove", async function () {
-  await calculateAverageRating(this.productId);
+// After delete (FIXED)
+reviewSchema.post("findOneAndDelete", async function (doc) {
+  if (doc) {
+    await calculateAverageRating(doc.productId);
+  }
 });
 
 const Review = mongoose.model("Review", reviewSchema);
+
 export default Review;

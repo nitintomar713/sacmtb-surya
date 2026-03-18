@@ -1,4 +1,3 @@
-// routes/reviewRoutes.js
 import express from "express";
 import {
   addReview,
@@ -6,15 +5,17 @@ import {
   deleteReview,
 } from "../middleware/reviewMiddleware.js";
 
+import { protect, admin } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
-// POST → Add new review
-router.post("/", addReview);
+// Add review (logged-in user only)
+router.post("/", protect, addReview);
 
-// GET → Get all reviews for one product
+// Get reviews (public)
 router.get("/:productId", getReviewsByProduct);
 
-// DELETE → Delete review by ID
-router.delete("/:id", deleteReview);
+// Delete review (admin only)
+router.delete("/:id", protect, admin, deleteReview);
 
 export default router;
