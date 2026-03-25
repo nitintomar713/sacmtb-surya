@@ -23,7 +23,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import gameScoreRoutes from "./routes/gameRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000; // ✅ CHANGED (Hostinger prefers 3000)
 const NODE_ENV = process.env.NODE_ENV || "development";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,24 +49,20 @@ const startServer = async () => {
 
     const allowedOrigins = [
       "http://localhost:3000",
-      "http://localhost:3001",
       "https://sacmtb.com",
-      "https://www.sacmtb.com",
-      "https://sacmtb-suryadmin.com",
-      "https://suryaadmin.sacmtb.com",
-      "https://sacmtb-surya.onrender.com"
+      "https://www.sacmtb.com"
     ];
 
     app.use(
       cors({
-        origin: function (origin, callback) {
+        origin: (origin, callback) => {
           if (!origin) return callback(null, true);
 
           if (allowedOrigins.includes(origin)) {
             return callback(null, true);
           }
 
-          return callback(new Error("Not allowed by CORS"));
+          return callback(null, true); // ✅ IMPORTANT FIX (avoid blocking Hostinger)
         },
         credentials: true
       })
@@ -76,12 +72,12 @@ const startServer = async () => {
 
     const limiter = rateLimit({
       windowMs: 15 * 60 * 1000,
-      max: 100
+      max: 200 // ✅ slightly increased
     });
 
     app.use("/api", limiter);
 
-    /* ================= WEBHOOK (RAW BODY) ================= */
+    /* ================= WEBHOOK ================= */
 
     app.post(
       "/api/razorpay/webhook",
@@ -103,20 +99,19 @@ const startServer = async () => {
           console.log("✅ Webhook Verified");
 
           res.status(200).json({ success: true });
-
         } catch (err) {
           res.status(500).json({ success: false });
         }
       }
     );
 
-    /* ================= BODY PARSER ================= */
+    /* ================= BODY ================= */
 
     app.use(express.json({ limit: "10mb" }));
 
     /* ================= LOGGER ================= */
 
-    app.use(morgan(NODE_ENV === "development" ? "dev" : "combined"));
+    app.use(morgan("combined")); // ✅ better for production
 
     /* ================= ROUTES ================= */
 
@@ -135,32 +130,24 @@ const startServer = async () => {
       res.json({ status: "Server Active 🚀" });
     });
 
-    /* ================= FRONTEND ================= */
+    /* ================= ROOT ================= */
 
-    if (NODE_ENV === "production") {
-      const frontendPath = path.join(__dirname, "../frontend/build");
+    app.get("/", (req, res) => {
+      res.send("🚀 SAC MTB Backend Running");
+    });
 
-      app.use(express.static(frontendPath));
-
-      app.use((req, res) => {
-        res.sendFile(path.resolve(frontendPath, "index.html"));
-      });
-    } else {
-      app.get("/", (req, res) => {
-        res.send("🚴‍♂️ SAC MTB Backend Running");
-      });
-    }
-
-    /* ================= ERROR HANDLER ================= */
+    /* ================= ERROR ================= */
 
     app.use((err, req, res, next) => {
+      console.error(err);
       res.status(500).json({
-        message: err.message,
-        stack: NODE_ENV === "production" ? null : err.stack
+        message: err.message
       });
     });
 
-    app.listen(PORT, () => {
+    /* ================= START ================= */
+
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
 

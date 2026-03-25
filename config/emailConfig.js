@@ -1,38 +1,35 @@
 // config/emailConfig.js
 import dotenv from "dotenv";
-import Brevo from "@getbrevo/brevo";
+import axios from "axios";
 
 dotenv.config();
 
-// Create Brevo Transactional Email API client
-export const brevoClient = new Brevo.TransactionalEmailsApi();
-
-// Set API Key
-brevoClient.setApiKey(
-  Brevo.TransactionalEmailsApiApiKeys.apiKey,
-  process.env.BREVO_API_KEY
-);
-
-// Universal sendEmail function
 export const sendEmail = async (toEmail, subject, htmlContent) => {
   try {
-    const emailData = {
-      sender: {
-        name: process.env.BREVO_SENDER_NAME,
-        email: process.env.BREVO_SENDER_EMAIL,
+    const response = await axios.post(
+      "https://api.brevo.com/v3/smtp/email",
+      {
+        sender: {
+          name: process.env.BREVO_SENDER_NAME,
+          email: process.env.BREVO_SENDER_EMAIL,
+        },
+        to: [{ email: toEmail }],
+        subject,
+        htmlContent,
       },
-      to: [{ email: toEmail }],
-      subject,
-      htmlContent,
-    };
+      {
+        headers: {
+          "api-key": process.env.BREVO_API_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-    await brevoClient.sendTransacEmail(emailData);
-
-    console.log(`📩 Email sent via Brevo → ${toEmail}`);
+    console.log("📩 Email sent:", response.data.messageId);
     return true;
 
   } catch (error) {
-    console.error("❌ Brevo Email Error:", error.message);
+    console.error("❌ Email Error:", error.response?.data || error.message);
     return false;
   }
 };
