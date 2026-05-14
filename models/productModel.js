@@ -6,22 +6,26 @@ const productSchema = new mongoose.Schema(
     /* ============================
        🆔 IDENTITY & BRANDING
     ============================ */
+
     name: {
       type: String,
       required: true,
       trim: true,
       index: true,
     },
+
     slug: {
       type: String,
       unique: true,
       index: true,
     },
+
     brand: {
       type: String,
       default: "SAC MTB",
       trim: true,
     },
+
     modelNumber: {
       type: String,
       trim: true,
@@ -30,14 +34,16 @@ const productSchema = new mongoose.Schema(
     /* ============================
        🏷️ CATEGORIZATION
     ============================ */
+
     category: {
       type: String,
       required: true,
-      enum: ["Bicycle", "Toys"], // Main separation
+      enum: ["Bicycle", "Toys"],
       index: true,
     },
+
     type: {
-      type: String, // e.g., "MTB", "Kids", "Jeeps", "Cars", "Bikes"
+      type: String,
       required: true,
       index: true,
     },
@@ -45,14 +51,17 @@ const productSchema = new mongoose.Schema(
     /* ============================
        💰 PRICING & INVENTORY
     ============================ */
+
     price: {
       type: Number,
       required: true,
       index: true,
     },
+
     discountPrice: {
       type: Number,
     },
+
     stock: {
       type: Number,
       default: 0,
@@ -62,25 +71,64 @@ const productSchema = new mongoose.Schema(
     /* ============================
        📝 CONTENT & MARKETING
     ============================ */
+
     description: {
       type: String,
       trim: true,
     },
-    // For your "Features" section (Icon + Title + Description)
-    features: [
-      {
-        title: { type: String },
-        desc: { type: String },
-      }
-    ],
-    // For your raw bullet points (existing data)
-    bulletPoints: [{ type: String }],
+
+    storyTitle: {
+      type: String,
+      default: "",
+    },
+
+    storyDescription: {
+      type: String,
+      default: "",
+    },
 
     /* ============================
-       📊 TECHNICAL SPECIFICATIONS (DYNAMIC)
+       ✨ FEATURES
     ============================ */
-    // For Bicycles: { "Gears": "21 Speed", "Brake": "Dual Disc" }
-    // For Toys: { "Battery": "12V", "Motors": "Double Motor" }
+
+    features: [
+      {
+        title: {
+          type: String,
+        },
+
+        desc: {
+          type: String,
+        },
+      },
+    ],
+
+    bulletPoints: [
+      {
+        type: String,
+      },
+    ],
+
+    /* ============================
+       📏 PRODUCT VARIANTS
+    ============================ */
+
+    sizes: [
+      {
+        type: String,
+      },
+    ],
+
+    colorOptions: [
+      {
+        type: String,
+      },
+    ],
+
+    /* ============================
+       📊 SPECIFICATIONS
+    ============================ */
+
     specifications: {
       type: Map,
       of: String,
@@ -90,41 +138,122 @@ const productSchema = new mongoose.Schema(
     /* ============================
        🖼️ MEDIA
     ============================ */
-    imageUrls: [{ type: String }],
+
+    thumbnail: {
+      type: String,
+    },
+
+    imageUrls: [
+      {
+        type: String,
+      },
+    ],
+
     videoUrl: {
       type: String,
       default: "",
     },
 
     /* ============================
+       🎥 EXPERIENCE MEDIA
+    ============================ */
+
+    experienceImages: [
+      {
+        type: String,
+      },
+    ],
+
+    experienceVideo: {
+      type: String,
+      default: "",
+    },
+
+    /* ============================
+       🎨 DYNAMIC UI THEMES
+    ============================ */
+
+    themeColor: {
+      type: String,
+      default: "#9dff00",
+    },
+
+    secondaryColor: {
+      type: String,
+      default: "#050505",
+    },
+
+    accentColor: {
+      type: String,
+      default: "#ffffff",
+    },
+
+    themeMode: {
+      type: String,
+      enum: ["dark", "light"],
+      default: "dark",
+    },
+
+    /* ============================
        ⭐ REVIEWS & RANKING
     ============================ */
+
     rating: {
       type: Number,
       default: 0,
       index: true,
     },
+
     numReviews: {
       type: Number,
       default: 0,
     },
+
+    featuredReviews: [
+      {
+        name: String,
+
+        image: String,
+
+        rating: Number,
+
+        comment: String,
+
+        verified: {
+          type: Boolean,
+          default: true,
+        },
+      },
+    ],
+
     isFeatured: {
       type: Boolean,
       default: false,
       index: true,
     },
 
+    showInHomepage: {
+      type: Boolean,
+      default: false,
+    },
+
     /* ============================
-       🚲 LEGACY FIELDS (To keep old data working)
+       🚲 LEGACY FIELDS
     ============================ */
+
     wheelSize: String,
+
     frameMaterial: String,
+
     suspension: String,
+
     brakeType: String,
+
     gears: String,
+
     weight: String,
-    colorOptions: [{ type: String }],
   },
+
   {
     timestamps: true,
   }
@@ -134,33 +263,67 @@ const productSchema = new mongoose.Schema(
    🔥 PERFORMANCE INDEXES
 ============================ */
 
-// Search indexing for the search bar
-productSchema.index({ name: "text", description: "text" });
+// Search indexing
+productSchema.index({
+  name: "text",
+  description: "text",
+});
 
-// Optimized filtering for the Products/Toys pages
-productSchema.index({ category: 1, type: 1, price: 1 });
+// Optimized filtering
+productSchema.index({
+  category: 1,
+  type: 1,
+  price: 1,
+});
 
 /* ============================
-   🛠️ MIDDLEWARE & METHODS
+   🛠️ MIDDLEWARE
 ============================ */
 
-// Automatically create a URL-friendly slug from the name
+// Auto slug generation
+
 productSchema.pre("save", function (next) {
+
   if (this.isModified("name")) {
-    this.slug = slugify(this.name, { lower: true, strict: true });
+
+    this.slug = slugify(
+      this.name,
+      {
+        lower: true,
+        strict: true,
+      }
+    );
   }
+
   next();
 });
 
-// Stock Management Methods
-productSchema.methods.decreaseStock = async function (quantity) {
+/* ============================
+   📦 STOCK METHODS
+============================ */
+
+productSchema.methods.decreaseStock =
+async function (quantity) {
+
   if (this.stock >= quantity) {
+
     this.stock -= quantity;
+
     return await this.save();
   }
-  throw new Error("Insufficient stock available.");
+
+  throw new Error(
+    "Insufficient stock available."
+  );
 };
 
-const Product = mongoose.model("Product", productSchema);
+/* ============================
+   🚀 MODEL
+============================ */
+
+const Product = mongoose.model(
+  "Product",
+  productSchema
+);
 
 export default Product;
