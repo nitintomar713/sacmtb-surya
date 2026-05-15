@@ -392,11 +392,6 @@ productSchema.index({
   displayOrder: 1,
 });
 
-// FEATURED INDEX
-
-productSchema.index({
-  isFeatured: 1,
-});
 
 /* ============================
    🛠️ MIDDLEWARE
