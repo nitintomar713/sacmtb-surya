@@ -26,17 +26,28 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 
 /* ================= CONFIG ================= */
 
-const PORT = process.env.PORT || 3000;
-const NODE_ENV = process.env.NODE_ENV || "development";
+const PORT =
+  process.env.PORT || 3000;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const NODE_ENV =
+  process.env.NODE_ENV ||
+  "development";
+
+const __filename =
+  fileURLToPath(import.meta.url);
+
+const __dirname =
+  path.dirname(__filename);
 
 /* ================= START SERVER ================= */
 
 const startServer = async () => {
 
   try {
+
+    /* =========================================
+       CONNECT DATABASE
+    ========================================= */
 
     await connectDB();
 
@@ -57,146 +68,235 @@ const startServer = async () => {
     );
 
     /* =========================================
-       CORS FIX
+       CORS
     ========================================= */
 
     const allowedOrigins = [
+
       "http://localhost:3000",
+
+      "http://localhost:5173",
+
       "https://sacmtb.com",
+
       "https://www.sacmtb.com",
     ];
 
-    app.use(
-      cors({
-        origin: function (origin, callback) {
+    const corsOptions = {
 
-          // allow requests with no origin
-          if (!origin) {
-            return callback(null, true);
-          }
+      origin: function (
+        origin,
+        callback
+      ) {
 
-          if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-          }
+        /* allow mobile apps/postman/server */
+
+        if (!origin) {
 
           return callback(
-            new Error("CORS not allowed")
+            null,
+            true
           );
-        },
+        }
 
-        methods: [
-          "GET",
-          "POST",
-          "PUT",
-          "DELETE",
-          "OPTIONS",
-        ],
+        /* allowed origins */
 
-        allowedHeaders: [
-          "Content-Type",
-          "Authorization",
-        ],
+        if (
+          allowedOrigins.includes(
+            origin
+          )
+        ) {
 
-        credentials: true,
-      })
+          return callback(
+            null,
+            true
+          );
+        }
+
+        return callback(
+
+          new Error(
+            `CORS blocked for: ${origin}`
+          )
+        );
+      },
+
+      credentials: true,
+
+      methods: [
+
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS",
+      ],
+
+      allowedHeaders: [
+
+        "Content-Type",
+        "Authorization",
+      ],
+    };
+
+    app.use(cors(corsOptions));
+
+    app.options(
+      "*",
+      cors(corsOptions)
     );
-
-    /* IMPORTANT */
-    app.options("*", cors());
-
-    /* =========================================
-       EXTRA HEADERS FIX
-    ========================================= */
-
-    app.use((req, res, next) => {
-
-      res.header(
-        "Access-Control-Allow-Origin",
-        req.headers.origin || "*"
-      );
-
-      res.header(
-        "Access-Control-Allow-Credentials",
-        "true"
-      );
-
-      res.header(
-        "Access-Control-Allow-Headers",
-        "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-      );
-
-      res.header(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS"
-      );
-
-      next();
-    });
 
     /* =========================================
        BODY PARSER
     ========================================= */
 
-    app.use(express.json({ limit: "10mb" }));
-    app.use(express.urlencoded({ extended: true }));
+    app.use(
+      express.json({
+        limit: "10mb",
+      })
+    );
+
+    app.use(
+      express.urlencoded({
+        extended: true,
+      })
+    );
+
+    /* =========================================
+       STATIC FILES
+    ========================================= */
+
+    app.use(
+
+      "/uploads",
+
+      express.static(
+        path.join(
+          __dirname,
+          "uploads"
+        )
+      )
+    );
 
     /* =========================================
        LOGGER
     ========================================= */
 
-    app.use(morgan("combined"));
+    if (
+      NODE_ENV ===
+      "development"
+    ) {
+
+      app.use(morgan("dev"));
+
+    } else {
+
+      app.use(
+        morgan("combined")
+      );
+    }
 
     /* =========================================
        RATE LIMIT
     ========================================= */
 
-    const limiter = rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 200,
-    });
+    const limiter =
+      rateLimit({
 
-    app.use("/api", limiter);
+        windowMs:
+          15 * 60 * 1000,
+
+        max: 200,
+
+        message: {
+
+          success: false,
+
+          message:
+            "Too many requests. Try again later.",
+        },
+      });
+
+    app.use(
+      "/api",
+      limiter
+    );
 
     /* =========================================
        WEBHOOK
     ========================================= */
 
     app.post(
+
       "/api/razorpay/webhook",
-      express.raw({ type: "application/json" }),
+
+      express.raw({
+        type:
+          "application/json",
+      }),
+
       (req, res) => {
 
         try {
 
           const secret =
-            process.env.RAZORPAY_WEBHOOK_SECRET;
+            process.env
+              .RAZORPAY_WEBHOOK_SECRET;
 
           const signature =
-            req.headers["x-razorpay-signature"];
+            req.headers[
+              "x-razorpay-signature"
+            ];
 
-          const expected = crypto
-            .createHmac("sha256", secret)
-            .update(req.body)
-            .digest("hex");
+          const expected =
+            crypto
+              .createHmac(
+                "sha256",
+                secret
+              )
+              .update(req.body)
+              .digest("hex");
 
-          if (expected !== signature) {
+          if (
+            expected !==
+            signature
+          ) {
 
-            return res.status(400).json({
-              message: "Invalid signature",
-            });
+            return res
+              .status(400)
+              .json({
+
+                success:false,
+
+                message:
+                  "Invalid signature",
+              });
           }
 
-          console.log("✅ Webhook Verified");
+          console.log(
+            "✅ Webhook Verified"
+          );
 
-          res.status(200).json({
-            success: true,
-          });
+          return res
+            .status(200)
+            .json({
+
+              success: true,
+            });
 
         } catch (err) {
 
-          res.status(500).json({
-            success: false,
-          });
+          console.error(err);
+
+          return res
+            .status(500)
+            .json({
+
+              success:false,
+
+              message:
+                "Webhook Error",
+            });
         }
       }
     );
@@ -205,59 +305,146 @@ const startServer = async () => {
        API ROUTES
     ========================================= */
 
-    app.use("/api/orders", orderRoutes);
-    app.use("/api/games", gameScoreRoutes);
-    app.use("/api/reviews", reviewRoutes);
-    app.use("/api/products", productRoutes);
-    app.use("/api/users", userRoutes);
-    app.use("/api/admin", adminRoutes);
-    app.use("/api/payments", paymentRoutes);
-    app.use("/api/upload", uploadRoutes);
+    app.use(
+      "/api/orders",
+      orderRoutes
+    );
+
+    app.use(
+      "/api/games",
+      gameScoreRoutes
+    );
+
+    app.use(
+      "/api/reviews",
+      reviewRoutes
+    );
+
+    app.use(
+      "/api/products",
+      productRoutes
+    );
+
+    app.use(
+      "/api/users",
+      userRoutes
+    );
+
+    app.use(
+      "/api/admin",
+      adminRoutes
+    );
+
+    app.use(
+      "/api/payments",
+      paymentRoutes
+    );
+
+    app.use(
+      "/api/upload",
+      uploadRoutes
+    );
 
     /* =========================================
        HEALTH CHECK
     ========================================= */
 
-    app.get("/ping", (req, res) => {
+    app.get(
+      "/ping",
+      (req, res) => {
 
-      res.json({
-        status: "Server Active 🚀",
-      });
-    });
+        res.status(200).json({
+
+          success: true,
+
+          status:
+            "Server Active 🚀",
+
+          environment:
+            NODE_ENV,
+        });
+      }
+    );
 
     /* =========================================
        ROOT
     ========================================= */
 
-    app.get("/", (req, res) => {
+    app.get(
+      "/",
+      (req, res) => {
 
-      res.send("🚀 SAC MTB Backend Running");
+        res.send(
+          "🚀 SAC MTB Backend Running"
+        );
+      }
+    );
+
+    /* =========================================
+       404
+    ========================================= */
+
+    app.use((req, res) => {
+
+      res.status(404).json({
+
+        success:false,
+
+        message:
+          "Route Not Found",
+      });
     });
 
     /* =========================================
        ERROR HANDLER
     ========================================= */
 
-    app.use((err, req, res, next) => {
+    app.use(
+      (
+        err,
+        req,
+        res,
+        next
+      ) => {
 
-      console.error(err);
+        console.error(
+          "❌ ERROR:",
+          err.message
+        );
 
-      res.status(500).json({
-        success: false,
-        message: err.message,
-      });
-    });
+        res.status(
+          err.status || 500
+        ).json({
+
+          success:false,
+
+          message:
+            err.message ||
+            "Server Error",
+        });
+      }
+    );
 
     /* =========================================
        START SERVER
     ========================================= */
 
-    app.listen(PORT, "0.0.0.0", () => {
+    app.listen(
+      PORT,
+      "0.0.0.0",
+      () => {
 
-      console.log(
-        `🚀 Server running on port ${PORT}`
-      );
-    });
+        console.log(
+
+          `🚀 Server running on port ${PORT}`
+        );
+
+        console.log(
+
+          `🌍 ENV: ${NODE_ENV}`
+        );
+      }
+    );
 
   } catch (error) {
 
