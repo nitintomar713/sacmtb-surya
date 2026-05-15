@@ -18,6 +18,7 @@ const cache = new NodeCache({
 ========================================= */
 
 const upload = multer({
+
   storage: multer.memoryStorage(),
 
   limits: {
@@ -38,8 +39,13 @@ router.get("/", async (req, res) => {
 
     if (page < 1) page = 1;
 
+    /* LIMIT PROTECTION */
+
     const limit =
-      Number(req.query.limit) || 12;
+      Math.min(
+        Number(req.query.limit) || 12,
+        50
+      );
 
     const skip =
       (page - 1) * limit;
@@ -50,6 +56,7 @@ router.get("/", async (req, res) => {
       search,
       featured,
       homepage,
+      status,
     } = req.query;
 
     /* =========================================
@@ -57,38 +64,66 @@ router.get("/", async (req, res) => {
     ========================================= */
 
     const filter = {
-      status: "active",
+
+      $or: [
+
+        { status: "active" },
+
+        { status: { $exists: false } }
+      ]
     };
+
+    /* CATEGORY */
 
     if (category) {
 
       filter.category = {
+
         $regex: `^${category}$`,
+
         $options: "i",
       };
     }
+
+    /* TYPE */
 
     if (type) {
 
       filter.type = {
+
         $regex: `^${type}$`,
+
         $options: "i",
       };
     }
+
+    /* FEATURED */
 
     if (featured === "true") {
 
       filter.isFeatured = true;
     }
 
+    /* HOMEPAGE */
+
     if (homepage === "true") {
 
       filter.showInHomepage = true;
     }
 
+    /* STATUS */
+
+    if (status) {
+
+      filter.status = status;
+    }
+
+    /* SEARCH */
+
     if (search) {
 
       filter.$text = {
+
         $search: search,
       };
     }
@@ -99,7 +134,7 @@ router.get("/", async (req, res) => {
 
     const cacheKey =
 
-      `products-${page}-${limit}-${category || "all"}-${type || "all"}-${search || "none"}-${featured || "false"}-${homepage || "false"}`;
+      `products-${page}-${limit}-${category || "all"}-${type || "all"}-${search || "none"}-${featured || "false"}-${homepage || "false"}-${status || "active"}`;
 
     const cached =
       cache.get(cacheKey);
@@ -133,6 +168,7 @@ router.get("/", async (req, res) => {
 
       name
       slug
+
       thumbnail
       imageUrls
 
@@ -194,6 +230,10 @@ router.get("/", async (req, res) => {
       });
     }
 
+    /* =========================================
+       EXECUTE QUERY
+    ========================================= */
+
     const products =
       await query.lean();
 
@@ -201,6 +241,10 @@ router.get("/", async (req, res) => {
       await Product.countDocuments(
         filter
       );
+
+    /* =========================================
+       RESPONSE
+    ========================================= */
 
     const response = {
 
@@ -211,13 +255,25 @@ router.get("/", async (req, res) => {
       page,
 
       pages:
-        Math.ceil(total / limit),
+
+        Math.max(
+          1,
+          Math.ceil(total / limit)
+        ),
     };
+
+    /* =========================================
+       SAVE CACHE
+    ========================================= */
 
     cache.set(
       cacheKey,
       response
     );
+
+    /* =========================================
+       SEND RESPONSE
+    ========================================= */
 
     res.status(200).json(
       response
@@ -231,6 +287,8 @@ router.get("/", async (req, res) => {
     );
 
     res.status(500).json({
+
+      success:false,
 
       message:
       "Error fetching products",
@@ -267,8 +325,16 @@ router.get(
 
           showInHomepage: true,
 
-          status: "active",
+          $or: [
 
+            { status: "active" },
+
+            {
+              status: {
+                $exists: false
+              }
+            }
+          ]
         })
 
         .sort({
@@ -334,8 +400,16 @@ router.get(
 
           isFeatured: true,
 
-          status: "active",
+          $or: [
 
+            { status: "active" },
+
+            {
+              status: {
+                $exists: false
+              }
+            }
+          ]
         })
 
         .sort({
@@ -398,7 +472,16 @@ router.get(
           slug:
             req.params.slug,
 
-          status: "active",
+          $or: [
+
+            { status: "active" },
+
+            {
+              status: {
+                $exists: false
+              }
+            }
+          ]
 
         }).lean();
 
@@ -535,8 +618,16 @@ router.get(
           type:
             currentProduct.type,
 
-          status: "active",
+          $or: [
 
+            { status: "active" },
+
+            {
+              status: {
+                $exists: false
+              }
+            }
+          ]
         })
 
         .limit(6)
