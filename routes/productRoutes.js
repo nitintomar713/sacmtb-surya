@@ -5,6 +5,10 @@ import NodeCache from "node-cache";
 
 const router = express.Router();
 
+/* =========================================
+   CACHE
+========================================= */
+
 const cache = new NodeCache({
   stdTTL: 300,
 });
@@ -23,11 +27,6 @@ const upload = multer({
 
 /* =========================================
    GET PRODUCTS
-   Supports:
-   - category
-   - type
-   - search
-   - pagination
 ========================================= */
 
 router.get("/", async (req, res) => {
@@ -39,7 +38,8 @@ router.get("/", async (req, res) => {
 
     if (page < 1) page = 1;
 
-    const limit = 12;
+    const limit =
+      Number(req.query.limit) || 12;
 
     const skip =
       (page - 1) * limit;
@@ -48,13 +48,17 @@ router.get("/", async (req, res) => {
       category,
       type,
       search,
+      featured,
+      homepage,
     } = req.query;
 
-    const filter = {};
-
     /* =========================================
-       CATEGORY FILTER
+       FILTER
     ========================================= */
+
+    const filter = {
+      status: "active",
+    };
 
     if (category) {
 
@@ -64,10 +68,6 @@ router.get("/", async (req, res) => {
       };
     }
 
-    /* =========================================
-       TYPE FILTER
-    ========================================= */
-
     if (type) {
 
       filter.type = {
@@ -76,9 +76,15 @@ router.get("/", async (req, res) => {
       };
     }
 
-    /* =========================================
-       TEXT SEARCH
-    ========================================= */
+    if (featured === "true") {
+
+      filter.isFeatured = true;
+    }
+
+    if (homepage === "true") {
+
+      filter.showInHomepage = true;
+    }
 
     if (search) {
 
@@ -88,11 +94,12 @@ router.get("/", async (req, res) => {
     }
 
     /* =========================================
-       CACHE
+       CACHE KEY
     ========================================= */
 
     const cacheKey =
-      `products-${page}-${category || "all"}-${type || "all"}-${search || "none"}`;
+
+      `products-${page}-${limit}-${category || "all"}-${type || "all"}-${search || "none"}-${featured || "false"}-${homepage || "false"}`;
 
     const cached =
       cache.get(cacheKey);
@@ -105,40 +112,90 @@ router.get("/", async (req, res) => {
     }
 
     /* =========================================
-       FETCH PRODUCTS
+       QUERY
     ========================================= */
 
-    const products =
-      await Product.find(filter)
+    let query = Product.find(
 
-      .select(`
-        name
-        slug
-        thumbnail
-        imageUrls
-        price
-        discountPrice
-        category
-        type
-        stock
-        rating
-        isFeatured
-        showInHomepage
-        themeColor
-        secondaryColor
-        accentColor
-        createdAt
-      `)
+      filter,
 
-      .skip(skip)
+      search
+      ? {
+          score: {
+            $meta: "textScore",
+          },
+        }
+      : {}
 
-      .limit(limit)
+    )
 
-      .sort({
+    .select(`
+
+      name
+      slug
+      thumbnail
+      imageUrls
+
+      badge
+
+      price
+      discountPrice
+
+      category
+      type
+
+      stock
+
+      rating
+      numReviews
+
+      themeColor
+      secondaryColor
+      accentColor
+
+      deliveryInfo
+      warranty
+
+      isFeatured
+      showInHomepage
+
+      status
+      displayOrder
+
+      createdAt
+
+    `)
+
+    .skip(skip)
+
+    .limit(limit);
+
+    /* =========================================
+       SORT
+    ========================================= */
+
+    if (search) {
+
+      query = query.sort({
+
+        score: {
+          $meta: "textScore",
+        },
+
+      });
+
+    } else {
+
+      query = query.sort({
+
+        displayOrder: 1,
+
         createdAt: -1,
-      })
+      });
+    }
 
-      .lean();
+    const products =
+      await query.lean();
 
     const total =
       await Product.countDocuments(
@@ -157,9 +214,14 @@ router.get("/", async (req, res) => {
         Math.ceil(total / limit),
     };
 
-    cache.set(cacheKey, response);
+    cache.set(
+      cacheKey,
+      response
+    );
 
-    res.status(200).json(response);
+    res.status(200).json(
+      response
+    );
 
   } catch (error) {
 
@@ -169,14 +231,16 @@ router.get("/", async (req, res) => {
     );
 
     res.status(500).json({
+
       message:
-        "Error fetching products",
+      "Error fetching products",
+
     });
   }
 });
 
 /* =========================================
-   GET FEATURED PRODUCTS
+   HOMEPAGE PRODUCTS
 ========================================= */
 
 router.get(
@@ -185,20 +249,107 @@ router.get(
 
     try {
 
+      const cacheKey =
+        "homepage-products";
+
+      const cached =
+        cache.get(cacheKey);
+
+      if (cached) {
+
+        return res
+          .status(200)
+          .json(cached);
+      }
+
       const products =
         await Product.find({
 
           showInHomepage: true,
 
+          status: "active",
+
+        })
+
+        .sort({
+
+          displayOrder: 1,
+
+          createdAt: -1,
+
         })
 
         .limit(8)
 
+        .lean();
+
+      cache.set(
+        cacheKey,
+        products
+      );
+
+      res.status(200).json(
+        products
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).json({
+
+        message:
+          "Error fetching homepage products",
+
+      });
+    }
+  }
+);
+
+/* =========================================
+   FEATURED PRODUCTS
+========================================= */
+
+router.get(
+  "/featured/all",
+  async (req, res) => {
+
+    try {
+
+      const cacheKey =
+        "featured-products";
+
+      const cached =
+        cache.get(cacheKey);
+
+      if (cached) {
+
+        return res
+          .status(200)
+          .json(cached);
+      }
+
+      const products =
+        await Product.find({
+
+          isFeatured: true,
+
+          status: "active",
+
+        })
+
         .sort({
-          createdAt: -1,
+
+          displayOrder: 1,
+
         })
 
         .lean();
+
+      cache.set(
+        cacheKey,
+        products
+      );
 
       res.status(200).json(
         products
@@ -219,7 +370,7 @@ router.get(
 );
 
 /* =========================================
-   GET PRODUCT BY SLUG
+   PRODUCT BY SLUG
 ========================================= */
 
 router.get(
@@ -228,10 +379,26 @@ router.get(
 
     try {
 
+      const cacheKey =
+        `slug-${req.params.slug}`;
+
+      const cached =
+        cache.get(cacheKey);
+
+      if (cached) {
+
+        return res
+          .status(200)
+          .json(cached);
+      }
+
       const product =
         await Product.findOne({
 
-          slug: req.params.slug,
+          slug:
+            req.params.slug,
+
+          status: "active",
 
         }).lean();
 
@@ -244,6 +411,11 @@ router.get(
 
         });
       }
+
+      cache.set(
+        cacheKey,
+        product
+      );
 
       res.status(200).json(
         product
@@ -264,7 +436,7 @@ router.get(
 );
 
 /* =========================================
-   GET SINGLE PRODUCT
+   SINGLE PRODUCT
 ========================================= */
 
 router.get("/:id", async (req, res) => {
@@ -299,7 +471,10 @@ router.get("/:id", async (req, res) => {
       });
     }
 
-    cache.set(cacheKey, product);
+    cache.set(
+      cacheKey,
+      product
+    );
 
     res.status(200).json(
       product
@@ -357,9 +532,20 @@ router.get(
           category:
             currentProduct.category,
 
+          type:
+            currentProduct.type,
+
+          status: "active",
+
         })
 
         .limit(6)
+
+        .sort({
+
+          rating: -1,
+
+        })
 
         .lean();
 
@@ -444,6 +630,10 @@ router.post("/", async (req, res) => {
           req.body.accentColor ||
           "#ffffff",
 
+        status:
+          req.body.status ||
+          "active",
+
       });
 
     cache.flushAll();
@@ -487,6 +677,7 @@ router.put("/:id", async (req, res) => {
 
         {
           new: true,
+
           runValidators: true,
         }
 

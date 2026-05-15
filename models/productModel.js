@@ -31,6 +31,26 @@ const productSchema = new mongoose.Schema(
       trim: true,
     },
 
+    badge: {
+      type: String,
+      default: "",
+    },
+
+    status: {
+      type: String,
+      enum: [
+        "active",
+        "draft",
+        "outofstock",
+      ],
+      default: "active",
+    },
+
+    displayOrder: {
+      type: Number,
+      default: 0,
+    },
+
     /* ============================
        🏷️ CATEGORIZATION
     ============================ */
@@ -68,6 +88,17 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
 
+    deliveryInfo: {
+      type: String,
+      default:
+        "Free Delivery Available",
+    },
+
+    warranty: {
+      type: String,
+      default: "",
+    },
+
     /* ============================
        📝 CONTENT & MARKETING
     ============================ */
@@ -75,6 +106,21 @@ const productSchema = new mongoose.Schema(
     description: {
       type: String,
       trim: true,
+    },
+
+    heroTitle: {
+      type: String,
+      default: "",
+    },
+
+    heroSubtitle: {
+      type: String,
+      default: "",
+    },
+
+    heroDescription: {
+      type: String,
+      default: "",
     },
 
     storyTitle: {
@@ -99,6 +145,11 @@ const productSchema = new mongoose.Schema(
 
         desc: {
           type: String,
+        },
+
+        icon: {
+          type: String,
+          default: "",
         },
       },
     ],
@@ -141,6 +192,7 @@ const productSchema = new mongoose.Schema(
 
     thumbnail: {
       type: String,
+      default: "",
     },
 
     imageUrls: [
@@ -169,6 +221,11 @@ const productSchema = new mongoose.Schema(
       default: "",
     },
 
+    rotationSpeed: {
+      type: Number,
+      default: 30,
+    },
+
     /* ============================
        🎨 DYNAMIC UI THEMES
     ============================ */
@@ -192,6 +249,11 @@ const productSchema = new mongoose.Schema(
       type: String,
       enum: ["dark", "light"],
       default: "dark",
+    },
+
+    stickyEnabled: {
+      type: Boolean,
+      default: true,
     },
 
     /* ============================
@@ -238,6 +300,50 @@ const productSchema = new mongoose.Schema(
     },
 
     /* ============================
+       🎛️ SECTION CONTROLS
+    ============================ */
+
+    showStorySection: {
+      type: Boolean,
+      default: true,
+    },
+
+    showExperienceSection: {
+      type: Boolean,
+      default: true,
+    },
+
+    showReviewsSection: {
+      type: Boolean,
+      default: true,
+    },
+
+    showSpecificationsSection: {
+      type: Boolean,
+      default: true,
+    },
+
+    /* ============================
+       🔍 SEO
+    ============================ */
+
+    seoTitle: {
+      type: String,
+      default: "",
+    },
+
+    seoDescription: {
+      type: String,
+      default: "",
+    },
+
+    seoKeywords: [
+      {
+        type: String,
+      },
+    ],
+
+    /* ============================
        🚲 LEGACY FIELDS
     ============================ */
 
@@ -263,40 +369,61 @@ const productSchema = new mongoose.Schema(
    🔥 PERFORMANCE INDEXES
 ============================ */
 
-// Search indexing
+// SEARCH INDEX
+
 productSchema.index({
   name: "text",
   description: "text",
+  seoTitle: "text",
 });
 
-// Optimized filtering
+// FILTER INDEX
+
 productSchema.index({
   category: 1,
   type: 1,
   price: 1,
 });
 
+// HOMEPAGE INDEX
+
+productSchema.index({
+  showInHomepage: 1,
+  displayOrder: 1,
+});
+
+// FEATURED INDEX
+
+productSchema.index({
+  isFeatured: 1,
+});
+
 /* ============================
    🛠️ MIDDLEWARE
 ============================ */
 
-// Auto slug generation
+// AUTO SLUG
 
-productSchema.pre("save", function (next) {
+productSchema.pre(
+  "save",
+  function (next) {
 
-  if (this.isModified("name")) {
+    if (
+      this.isModified("name")
+    ) {
 
-    this.slug = slugify(
-      this.name,
-      {
-        lower: true,
-        strict: true,
-      }
-    );
+      this.slug = slugify(
+        this.name,
+        {
+          lower: true,
+          strict: true,
+        }
+      );
+    }
+
+    next();
   }
-
-  next();
-});
+);
 
 /* ============================
    📦 STOCK METHODS
@@ -305,7 +432,9 @@ productSchema.pre("save", function (next) {
 productSchema.methods.decreaseStock =
 async function (quantity) {
 
-  if (this.stock >= quantity) {
+  if (
+    this.stock >= quantity
+  ) {
 
     this.stock -= quantity;
 
