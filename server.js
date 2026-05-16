@@ -71,80 +71,83 @@ const startServer = async () => {
        CORS
     ========================================= */
 
-    const allowedOrigins = [
+  const allowedOrigins = [
 
-      "http://localhost:3000",
+  "http://localhost:3000",
 
-      "http://localhost:5173",
+  "http://localhost:5173",
 
-      "https://sacmtb.com",
+  "https://sacmtb.com",
 
-      "https://www.sacmtb.com",
-    ];
+  "https://www.sacmtb.com",
 
-    const corsOptions = {
+  "https://admin.sacmtb.com",
 
-      origin: function (
-        origin,
-        callback
-      ) {
+  "https://www.admin.sacmtb.com"
+];
 
-        /* allow mobile apps/postman/server */
+const corsOptions = {
 
-        if (!origin) {
+  origin: function (
+    origin,
+    callback
+  ) {
 
-          return callback(
-            null,
-            true
-          );
-        }
+    if (!origin) {
 
-        /* allowed origins */
+      return callback(
+        null,
+        true
+      );
+    }
 
-        if (
-          allowedOrigins.includes(
-            origin
-          )
-        ) {
+    if (
+      allowedOrigins.includes(
+        origin
+      )
+    ) {
 
-          return callback(
-            null,
-            true
-          );
-        }
+      return callback(
+        null,
+        true
+      );
+    }
 
-        return callback(
-
-          new Error(
-            `CORS blocked for: ${origin}`
-          )
-        );
-      },
-
-      credentials: true,
-
-      methods: [
-
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "OPTIONS",
-      ],
-
-      allowedHeaders: [
-
-        "Content-Type",
-        "Authorization",
-      ],
-    };
-
-    app.use(cors(corsOptions));
-
-    app.options(
-      "*",
-      cors(corsOptions)
+    console.log(
+      "❌ CORS blocked:",
+      origin
     );
+
+    return callback(
+      null,
+      false
+    );
+  },
+
+  credentials: true,
+
+  methods: [
+
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+  allowedHeaders: [
+
+    "Content-Type",
+    "Authorization",
+  ],
+};
+
+app.use(cors(corsOptions));
+
+app.options(
+  "*",
+  cors(corsOptions)
+);
 
     /* =========================================
        BODY PARSER
