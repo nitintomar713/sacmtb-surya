@@ -1,11 +1,15 @@
+// models/Product.js
+
 import mongoose from "mongoose";
 import slugify from "slugify";
 
 const productSchema = new mongoose.Schema(
+
   {
-    /* ============================
-       🆔 IDENTITY & BRANDING
-    ============================ */
+
+    /* =========================================
+       🆔 BASIC PRODUCT INFO
+    ========================================= */
 
     name: {
       type: String,
@@ -28,6 +32,7 @@ const productSchema = new mongoose.Schema(
 
     modelNumber: {
       type: String,
+      default: "",
       trim: true,
     },
 
@@ -51,14 +56,17 @@ const productSchema = new mongoose.Schema(
       default: 0,
     },
 
-    /* ============================
-       🏷️ CATEGORIZATION
-    ============================ */
+    /* =========================================
+       🏷 CATEGORY
+    ========================================= */
 
     category: {
       type: String,
       required: true,
-      enum: ["Bicycle", "Toys"],
+      enum: [
+        "Bicycle",
+        "Toys",
+      ],
       index: true,
     },
 
@@ -68,18 +76,20 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ============================
-       💰 PRICING & INVENTORY
-    ============================ */
+    /* =========================================
+       💰 PRICING
+    ========================================= */
 
     price: {
       type: Number,
       required: true,
+      default: 0,
       index: true,
     },
 
     discountPrice: {
       type: Number,
+      default: 0,
     },
 
     stock: {
@@ -99,12 +109,13 @@ const productSchema = new mongoose.Schema(
       default: "",
     },
 
-    /* ============================
-       📝 CONTENT & MARKETING
-    ============================ */
+    /* =========================================
+       📝 CONTENT
+    ========================================= */
 
     description: {
       type: String,
+      default: "",
       trim: true,
     },
 
@@ -133,62 +144,119 @@ const productSchema = new mongoose.Schema(
       default: "",
     },
 
-    /* ============================
+    /* =========================================
        ✨ FEATURES
-    ============================ */
+    ========================================= */
 
     features: [
+
       {
+
         title: {
           type: String,
+          default: "",
         },
 
         desc: {
           type: String,
+          default: "",
         },
 
         icon: {
           type: String,
           default: "",
         },
+
       },
+
     ],
 
     bulletPoints: [
+
       {
         type: String,
       },
+
     ],
 
-    /* ============================
+    /* =========================================
        📏 PRODUCT VARIANTS
-    ============================ */
+    ========================================= */
 
     sizes: [
+
       {
-        type: String,
+
+        size: {
+          type: String,
+          default: "",
+        },
+
+        price: {
+          type: Number,
+          default: 0,
+        },
+
+        stock: {
+          type: Number,
+          default: 0,
+        },
+
+        sku: {
+          type: String,
+          default: "",
+        },
+
       },
+
     ],
+
+    /* =========================================
+       🎨 COLOR OPTIONS
+    ========================================= */
 
     colorOptions: [
+
       {
-        type: String,
+
+        name: {
+          type: String,
+          default: "",
+        },
+
+        code: {
+          type: String,
+          default: "#ffffff",
+        },
+
+        images: [
+
+          {
+            type: String,
+          },
+
+        ],
+
       },
+
     ],
 
-    /* ============================
+    /* =========================================
        📊 SPECIFICATIONS
-    ============================ */
+    ========================================= */
 
     specifications: {
+
       type: Map,
+
       of: String,
+
       default: {},
     },
 
-    /* ============================
-       🖼️ MEDIA
-    ============================ */
+    /* =========================================
+       🖼 MAIN MEDIA
+    ========================================= */
 
     thumbnail: {
       type: String,
@@ -196,9 +264,11 @@ const productSchema = new mongoose.Schema(
     },
 
     imageUrls: [
+
       {
         type: String,
       },
+
     ],
 
     videoUrl: {
@@ -206,14 +276,16 @@ const productSchema = new mongoose.Schema(
       default: "",
     },
 
-    /* ============================
+    /* =========================================
        🎥 EXPERIENCE MEDIA
-    ============================ */
+    ========================================= */
 
     experienceImages: [
+
       {
         type: String,
       },
+
     ],
 
     experienceVideo: {
@@ -226,9 +298,9 @@ const productSchema = new mongoose.Schema(
       default: 30,
     },
 
-    /* ============================
+    /* =========================================
        🎨 DYNAMIC UI THEMES
-    ============================ */
+    ========================================= */
 
     themeColor: {
       type: String,
@@ -247,7 +319,10 @@ const productSchema = new mongoose.Schema(
 
     themeMode: {
       type: String,
-      enum: ["dark", "light"],
+      enum: [
+        "dark",
+        "light",
+      ],
       default: "dark",
     },
 
@@ -256,9 +331,9 @@ const productSchema = new mongoose.Schema(
       default: true,
     },
 
-    /* ============================
-       ⭐ REVIEWS & RANKING
-    ============================ */
+    /* =========================================
+       ⭐ REVIEWS
+    ========================================= */
 
     rating: {
       type: Number,
@@ -272,20 +347,36 @@ const productSchema = new mongoose.Schema(
     },
 
     featuredReviews: [
+
       {
-        name: String,
 
-        image: String,
+        name: {
+          type: String,
+          default: "",
+        },
 
-        rating: Number,
+        image: {
+          type: String,
+          default: "",
+        },
 
-        comment: String,
+        rating: {
+          type: Number,
+          default: 5,
+        },
+
+        comment: {
+          type: String,
+          default: "",
+        },
 
         verified: {
           type: Boolean,
           default: true,
         },
+
       },
+
     ],
 
     isFeatured: {
@@ -299,9 +390,9 @@ const productSchema = new mongoose.Schema(
       default: false,
     },
 
-    /* ============================
-       🎛️ SECTION CONTROLS
-    ============================ */
+    /* =========================================
+       🎛 SECTION CONTROLS
+    ========================================= */
 
     showStorySection: {
       type: Boolean,
@@ -323,9 +414,9 @@ const productSchema = new mongoose.Schema(
       default: true,
     },
 
-    /* ============================
+    /* =========================================
        🔍 SEO
-    ============================ */
+    ========================================= */
 
     seoTitle: {
       type: String,
@@ -338,69 +429,95 @@ const productSchema = new mongoose.Schema(
     },
 
     seoKeywords: [
+
       {
         type: String,
       },
+
     ],
 
-    /* ============================
+    /* =========================================
        🚲 LEGACY FIELDS
-    ============================ */
+    ========================================= */
 
-    wheelSize: String,
+    wheelSize: {
+      type: String,
+      default: "",
+    },
 
-    frameMaterial: String,
+    frameMaterial: {
+      type: String,
+      default: "",
+    },
 
-    suspension: String,
+    suspension: {
+      type: String,
+      default: "",
+    },
 
-    brakeType: String,
+    brakeType: {
+      type: String,
+      default: "",
+    },
 
-    gears: String,
+    gears: {
+      type: String,
+      default: "",
+    },
 
-    weight: String,
+    weight: {
+      type: String,
+      default: "",
+    },
+
   },
 
   {
     timestamps: true,
   }
+
 );
 
-/* ============================
-   🔥 PERFORMANCE INDEXES
-============================ */
-
-// SEARCH INDEX
+/* =========================================
+   🔥 INDEXES
+========================================= */
 
 productSchema.index({
+
   name: "text",
+
   description: "text",
+
   seoTitle: "text",
+
 });
 
-// FILTER INDEX
-
 productSchema.index({
+
   category: 1,
-  type: 1,
-  price: 1,
-});
 
-// HOMEPAGE INDEX
+  type: 1,
+
+  price: 1,
+
+});
 
 productSchema.index({
+
   showInHomepage: 1,
+
   displayOrder: 1,
+
 });
 
-
-/* ============================
-   🛠️ MIDDLEWARE
-============================ */
-
-// AUTO SLUG
+/* =========================================
+   🔗 AUTO SLUG
+========================================= */
 
 productSchema.pre(
+
   "save",
+
   function (next) {
 
     if (
@@ -408,21 +525,25 @@ productSchema.pre(
     ) {
 
       this.slug = slugify(
+
         this.name,
+
         {
           lower: true,
           strict: true,
         }
+
       );
     }
 
     next();
   }
+
 );
 
-/* ============================
-   📦 STOCK METHODS
-============================ */
+/* =========================================
+   📦 STOCK METHOD
+========================================= */
 
 productSchema.methods.decreaseStock =
 async function (quantity) {
@@ -441,9 +562,9 @@ async function (quantity) {
   );
 };
 
-/* ============================
+/* =========================================
    🚀 MODEL
-============================ */
+========================================= */
 
 const Product = mongoose.model(
   "Product",

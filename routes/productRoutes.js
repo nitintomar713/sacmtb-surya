@@ -1,3 +1,5 @@
+// routes/productRoutes.js
+
 import express from "express";
 import multer from "multer";
 import Product from "../models/productModel.js";
@@ -37,9 +39,8 @@ router.get("/", async (req, res) => {
     let page =
       Number(req.query.page) || 1;
 
-    if (page < 1) page = 1;
-
-    /* LIMIT PROTECTION */
+    if (page < 1)
+      page = 1;
 
     const limit =
       Math.min(
@@ -69,11 +70,13 @@ router.get("/", async (req, res) => {
 
         { status: "active" },
 
-        { status: { $exists: false } }
+        {
+          status: {
+            $exists: false
+          }
+        }
       ]
     };
-
-    /* CATEGORY */
 
     if (category) {
 
@@ -85,8 +88,6 @@ router.get("/", async (req, res) => {
       };
     }
 
-    /* TYPE */
-
     if (type) {
 
       filter.type = {
@@ -97,28 +98,20 @@ router.get("/", async (req, res) => {
       };
     }
 
-    /* FEATURED */
-
     if (featured === "true") {
 
       filter.isFeatured = true;
     }
-
-    /* HOMEPAGE */
 
     if (homepage === "true") {
 
       filter.showInHomepage = true;
     }
 
-    /* STATUS */
-
     if (status) {
 
       filter.status = status;
     }
-
-    /* SEARCH */
 
     if (search) {
 
@@ -150,61 +143,67 @@ router.get("/", async (req, res) => {
        QUERY
     ========================================= */
 
-    let query = Product.find(
+    let query =
+      Product.find(
 
-      filter,
+        filter,
 
-      search
-      ? {
-          score: {
-            $meta: "textScore",
-          },
-        }
-      : {}
+        search
 
-    )
+        ? {
+            score: {
+              $meta:
+              "textScore",
+            },
+          }
 
-    .select(`
+        : {}
 
-      name
-      slug
+      )
 
-      thumbnail
-      imageUrls
+      .select(`
 
-      badge
+        name
+        slug
 
-      price
-      discountPrice
+        thumbnail
+        imageUrls
 
-      category
-      type
+        badge
 
-      stock
+        price
+        discountPrice
 
-      rating
-      numReviews
+        category
+        type
 
-      themeColor
-      secondaryColor
-      accentColor
+        stock
 
-      deliveryInfo
-      warranty
+        sizes
 
-      isFeatured
-      showInHomepage
+        rating
+        numReviews
 
-      status
-      displayOrder
+        themeColor
+        secondaryColor
+        accentColor
 
-      createdAt
+        deliveryInfo
+        warranty
 
-    `)
+        isFeatured
+        showInHomepage
 
-    .skip(skip)
+        status
+        displayOrder
 
-    .limit(limit);
+        createdAt
+
+      `)
+
+      .skip(skip)
+
+      .limit(limit);
 
     /* =========================================
        SORT
@@ -215,9 +214,9 @@ router.get("/", async (req, res) => {
       query = query.sort({
 
         score: {
-          $meta: "textScore",
+          $meta:
+          "textScore",
         },
-
       });
 
     } else {
@@ -230,10 +229,6 @@ router.get("/", async (req, res) => {
       });
     }
 
-    /* =========================================
-       EXECUTE QUERY
-    ========================================= */
-
     const products =
       await query.lean();
 
@@ -241,10 +236,6 @@ router.get("/", async (req, res) => {
       await Product.countDocuments(
         filter
       );
-
-    /* =========================================
-       RESPONSE
-    ========================================= */
 
     const response = {
 
@@ -262,18 +253,10 @@ router.get("/", async (req, res) => {
         ),
     };
 
-    /* =========================================
-       SAVE CACHE
-    ========================================= */
-
     cache.set(
       cacheKey,
       response
     );
-
-    /* =========================================
-       SEND RESPONSE
-    ========================================= */
 
     res.status(200).json(
       response
@@ -293,6 +276,8 @@ router.get("/", async (req, res) => {
       message:
       "Error fetching products",
 
+      error:
+      error.message,
     });
   }
 });
@@ -367,6 +352,8 @@ router.get(
         message:
           "Error fetching homepage products",
 
+        error:
+          error.message,
       });
     }
   }
@@ -438,6 +425,8 @@ router.get(
         message:
           "Error fetching featured products",
 
+        error:
+          error.message,
       });
     }
   }
@@ -513,6 +502,8 @@ router.get(
         message:
           "Error fetching product",
 
+        error:
+          error.message,
       });
     }
   }
@@ -575,88 +566,11 @@ router.get("/:id", async (req, res) => {
       message:
         "Error fetching product",
 
+      error:
+      error.message,
     });
   }
 });
-
-/* =========================================
-   RELATED PRODUCTS
-========================================= */
-
-router.get(
-  "/:id/related",
-  async (req, res) => {
-
-    try {
-
-      const currentProduct =
-        await Product.findById(
-          req.params.id
-        );
-
-      if (!currentProduct) {
-
-        return res.status(404).json({
-
-          message:
-            "Product not found",
-
-        });
-      }
-
-      const relatedProducts =
-        await Product.find({
-
-          _id: {
-            $ne:
-              currentProduct._id,
-          },
-
-          category:
-            currentProduct.category,
-
-          type:
-            currentProduct.type,
-
-          $or: [
-
-            { status: "active" },
-
-            {
-              status: {
-                $exists: false
-              }
-            }
-          ]
-        })
-
-        .limit(6)
-
-        .sort({
-
-          rating: -1,
-
-        })
-
-        .lean();
-
-      res.status(200).json(
-        relatedProducts
-      );
-
-    } catch (error) {
-
-      console.error(error);
-
-      res.status(500).json({
-
-        message:
-          "Error fetching related products",
-
-      });
-    }
-  }
-);
 
 /* =========================================
    CREATE PRODUCT
@@ -672,8 +586,6 @@ router.post("/", async (req, res) => {
       price,
       category,
       type,
-      specifications,
-
     } = req.body;
 
     if (
@@ -691,15 +603,90 @@ router.post("/", async (req, res) => {
       });
     }
 
-    let specs = specifications;
+    /* =========================================
+       SPECIFICATIONS
+    ========================================= */
+
+    let specifications =
+      req.body.specifications || {};
 
     if (
       typeof specifications ===
       "string"
     ) {
 
-      specs =
+      specifications =
         JSON.parse(specifications);
+    }
+
+    /* =========================================
+       SEO KEYWORDS
+    ========================================= */
+
+    let seoKeywords =
+      req.body.seoKeywords || [];
+
+    if (
+      typeof seoKeywords ===
+      "string"
+    ) {
+
+      seoKeywords =
+
+        seoKeywords
+
+          .split(",")
+
+          .map((k)=>
+            k.trim()
+          );
+    }
+
+    /* =========================================
+       VARIANTS
+    ========================================= */
+
+    let sizes =
+      req.body.sizes || [];
+
+    if (
+      typeof sizes ===
+      "string"
+    ) {
+
+      sizes =
+        JSON.parse(sizes);
+    }
+
+    sizes = sizes.map((item)=>({
+
+      size:
+        item.size || "",
+
+      price:
+        Number(item.price) || 0,
+
+      stock:
+        Number(item.stock) || 0,
+
+      sku:
+        item.sku || "",
+    }));
+
+    /* =========================================
+       COLORS
+    ========================================= */
+
+    let colorOptions =
+      req.body.colorOptions || [];
+
+    if (
+      typeof colorOptions ===
+      "string"
+    ) {
+
+      colorOptions =
+        JSON.parse(colorOptions);
     }
 
     const product =
@@ -707,7 +694,30 @@ router.post("/", async (req, res) => {
 
         ...req.body,
 
-        specifications: specs,
+        price:
+          Number(req.body.price),
+
+        discountPrice:
+          Number(
+            req.body.discountPrice
+          ) || 0,
+
+        stock:
+          Number(req.body.stock
+          ) || 0,
+
+        displayOrder:
+          Number(
+            req.body.displayOrder
+          ) || 0,
+
+        specifications,
+
+        seoKeywords,
+
+        sizes,
+
+        colorOptions,
 
         themeColor:
           req.body.themeColor ||
@@ -724,7 +734,6 @@ router.post("/", async (req, res) => {
         status:
           req.body.status ||
           "active",
-
       });
 
     cache.flushAll();
@@ -745,6 +754,8 @@ router.post("/", async (req, res) => {
       message:
         "Error creating product",
 
+      error:
+        error.message,
     });
   }
 });
@@ -757,16 +768,136 @@ router.put("/:id", async (req, res) => {
 
   try {
 
+    /* =========================================
+       SPECIFICATIONS
+    ========================================= */
+
+    let specifications =
+      req.body.specifications || {};
+
+    if (
+      typeof specifications ===
+      "string"
+    ) {
+
+      specifications =
+        JSON.parse(specifications);
+    }
+
+    /* =========================================
+       SEO KEYWORDS
+    ========================================= */
+
+    let seoKeywords =
+      req.body.seoKeywords || [];
+
+    if (
+      typeof seoKeywords ===
+      "string"
+    ) {
+
+      seoKeywords =
+
+        seoKeywords
+
+          .split(",")
+
+          .map((k)=>
+            k.trim()
+          );
+    }
+
+    /* =========================================
+       VARIANTS
+    ========================================= */
+
+    let sizes =
+      req.body.sizes || [];
+
+    if (
+      typeof sizes ===
+      "string"
+    ) {
+
+      sizes =
+        JSON.parse(sizes);
+    }
+
+    sizes = sizes.map((item)=>({
+
+      size:
+        item.size || "",
+
+      price:
+        Number(item.price) || 0,
+
+      stock:
+        Number(item.stock) || 0,
+
+      sku:
+        item.sku || "",
+    }));
+
+    /* =========================================
+       COLORS
+    ========================================= */
+
+    let colorOptions =
+      req.body.colorOptions || [];
+
+    if (
+      typeof colorOptions ===
+      "string"
+    ) {
+
+      colorOptions =
+        JSON.parse(colorOptions);
+    }
+
+    /* =========================================
+       UPDATE
+    ========================================= */
+
     const updated =
       await Product.findByIdAndUpdate(
 
         req.params.id,
 
         {
-          $set: req.body,
+
+          $set: {
+
+            ...req.body,
+
+            price:
+              Number(req.body.price),
+
+            discountPrice:
+              Number(
+                req.body.discountPrice
+              ) || 0,
+
+            stock:
+              Number(req.body.stock
+              ) || 0,
+
+            displayOrder:
+              Number(
+                req.body.displayOrder
+              ) || 0,
+
+            specifications,
+
+            seoKeywords,
+
+            sizes,
+
+            colorOptions,
+          },
         },
 
         {
+
           new: true,
 
           runValidators: true,
@@ -802,6 +933,8 @@ router.put("/:id", async (req, res) => {
       message:
         "Error updating product",
 
+      error:
+        error.message,
     });
   }
 });
@@ -850,6 +983,8 @@ router.delete("/:id", async (req, res) => {
       message:
         "Error deleting product",
 
+      error:
+      error.message,
     });
   }
 });
