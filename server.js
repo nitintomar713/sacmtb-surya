@@ -78,6 +78,7 @@ const startServer = async () => {
   "http://localhost:5173",
 
   "https://sacmtb.com",
+  "http://localhost:3001",
 
   "https://www.sacmtb.com",
 
