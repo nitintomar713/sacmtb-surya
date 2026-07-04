@@ -689,6 +689,51 @@ router.post("/", async (req, res) => {
         JSON.parse(colorOptions);
     }
 
+    console.log("[UPLOAD DEBUG] MongoDB payload before save", {
+      ...req.body,
+
+      price:
+        Number(req.body.price),
+
+      discountPrice:
+        Number(
+          req.body.discountPrice
+        ) || 0,
+
+      stock:
+        Number(req.body.stock
+        ) || 0,
+
+      displayOrder:
+        Number(
+          req.body.displayOrder
+        ) || 0,
+
+      specifications,
+
+      seoKeywords,
+
+      sizes,
+
+      colorOptions,
+
+      themeColor:
+        req.body.themeColor ||
+        "#9dff00",
+
+      secondaryColor:
+        req.body.secondaryColor ||
+        "#050505",
+
+      accentColor:
+        req.body.accentColor ||
+        "#ffffff",
+
+      status:
+        req.body.status ||
+        "active",
+    });
+
     const product =
       await Product.create({
 
@@ -735,6 +780,8 @@ router.post("/", async (req, res) => {
           req.body.status ||
           "active",
       });
+
+    console.log("[UPLOAD DEBUG] MongoDB save completed", product);
 
     cache.flushAll();
 
@@ -858,6 +905,38 @@ router.put("/:id", async (req, res) => {
        UPDATE
     ========================================= */
 
+    console.log("[UPLOAD DEBUG] MongoDB payload before save", {
+      $set: {
+
+        ...req.body,
+
+        price:
+          Number(req.body.price),
+
+        discountPrice:
+          Number(
+            req.body.discountPrice
+          ) || 0,
+
+        stock:
+          Number(req.body.stock
+          ) || 0,
+
+        displayOrder:
+          Number(
+            req.body.displayOrder
+          ) || 0,
+
+        specifications,
+
+        seoKeywords,
+
+        sizes,
+
+        colorOptions,
+      },
+    });
+
     const updated =
       await Product.findByIdAndUpdate(
 
@@ -904,6 +983,8 @@ router.put("/:id", async (req, res) => {
         }
 
       ).lean();
+
+    console.log("[UPLOAD DEBUG] MongoDB save completed", updated);
 
     if (!updated) {
 

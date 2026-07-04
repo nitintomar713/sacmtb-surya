@@ -3,6 +3,11 @@ import User from "../models/userModel.js";
 
 export const protect = async (req, res, next) => {
   try {
+    console.log("[UPLOAD DEBUG] Authentication middleware running", {
+      method: req.method,
+      path: req.originalUrl,
+    });
+
     let token;
 
     // Check for token in headers or cookies
@@ -13,6 +18,10 @@ export const protect = async (req, res, next) => {
     }
 
     if (!token) {
+      console.error("[UPLOAD DEBUG] Authentication token missing", {
+        userId: undefined,
+        role: undefined,
+      });
       return res.status(401).json({ message: "No token provided, not authorized" });
     }
 
@@ -20,7 +29,14 @@ export const protect = async (req, res, next) => {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log("[UPLOAD DEBUG] Decoded user", decoded);
+      console.log("[UPLOAD DEBUG] Decoded user id", decoded?.id);
     } catch (error) {
+      console.error("[UPLOAD DEBUG] Authentication decode error", {
+        error,
+        message: error.message,
+        stack: error.stack,
+      });
       return res
         .status(401)
         .json({ message: "Invalid or expired token, please login again" });
@@ -29,8 +45,19 @@ export const protect = async (req, res, next) => {
     // Find the user
     const user = await User.findById(decoded.id).select("-password");
     if (!user) {
+      console.error("[UPLOAD DEBUG] Authenticated user not found", {
+        userId: decoded.id,
+        role: undefined,
+      });
       return res.status(401).json({ message: "User not found, unauthorized" });
     }
+
+    console.log("[UPLOAD DEBUG] Authenticated user", user);
+    console.log("[UPLOAD DEBUG] Authenticated user id", user._id);
+    console.log(
+      "[UPLOAD DEBUG] Authenticated user role",
+      user.isAdmin ? "admin" : "user"
+    );
 
     // Optional checks
     if (!user.isVerified) {
@@ -43,6 +70,11 @@ export const protect = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
+    console.error("[UPLOAD DEBUG] Authentication middleware error", {
+      error,
+      message: error.message,
+      stack: error.stack,
+    });
     console.error("[Auth Middleware Error]:", error);
     res.status(500).json({ message: "Server error during authentication" });
   }

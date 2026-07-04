@@ -35,10 +35,7 @@ const upload = multer({
 });
 
 const getSafeRequestHeaders = (req) => ({
-  "content-type": req.headers["content-type"],
-  "content-length": req.headers["content-length"],
-  origin: req.headers.origin,
-  "user-agent": req.headers["user-agent"],
+  ...req.headers,
   authorization: req.headers.authorization
     ? "Bearer [redacted]"
     : "not provided",
@@ -46,13 +43,18 @@ const getSafeRequestHeaders = (req) => ({
 
 const logIncomingUpload = (req, res, next) => {
   if (UPLOAD_DEBUG) {
-    console.log("[Upload debug][Incoming request]", {
+    console.log("[UPLOAD DEBUG] Request received", {
+      timestamp: new Date().toISOString(),
       method: req.method,
       path: req.originalUrl,
-      headers: getSafeRequestHeaders(req),
-      bodyBeforeMulter: req.body,
-      filesBeforeMulter: req.files,
     });
+    console.log("[UPLOAD DEBUG] Request headers", getSafeRequestHeaders(req));
+    console.log(
+      "[UPLOAD DEBUG] Authorization header",
+      req.headers.authorization ? "Bearer [redacted]" : "not provided"
+    );
+    console.log("[UPLOAD DEBUG] req.body before Multer", req.body);
+    console.log("[UPLOAD DEBUG] req.files before Multer", req.files);
   }
 
   next();
@@ -63,19 +65,34 @@ const getFileMetadata = (file) => ({
   originalname: file.originalname,
   mimetype: file.mimetype,
   size: file.size,
+  filename: file.filename,
+  path: file.path,
   hasBuffer: Buffer.isBuffer(file.buffer),
 });
 
 const handleMulterError = (error, req, res, next) => {
   if (!error) {
     if (UPLOAD_DEBUG) {
-      console.log("[Upload debug][After Multer]", {
-        body: req.body,
-        files: Array.isArray(req.files)
+      const uploadedFiles = Array.isArray(req.files)
           ? req.files.map(getFileMetadata)
           : req.file
             ? [getFileMetadata(req.file)]
-            : [],
+            : [];
+
+      console.log("[UPLOAD DEBUG] req.body after Multer", req.body);
+      console.log("[UPLOAD DEBUG] req.files after Multer", uploadedFiles);
+      console.log(
+        "[UPLOAD DEBUG] Number of uploaded files",
+        uploadedFiles.length
+      );
+      uploadedFiles.forEach((file, index) => {
+        console.log(`[UPLOAD DEBUG] Uploaded file ${index + 1}`, {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+          filename: file.filename,
+          path: file.path,
+        });
       });
     }
 
@@ -83,7 +100,8 @@ const handleMulterError = (error, req, res, next) => {
     return;
   }
 
-  console.error("[Upload debug][Multer error]", {
+  console.error("[UPLOAD DEBUG] Multer error", {
+    error,
     name: error.name,
     code: error.code,
     field: error.field,
@@ -129,11 +147,12 @@ const avatarMiddleware = (req, res, next) => {
 };
 
 const logCloudinaryError = (label, error, file) => {
-  console.error(`[Upload debug][Cloudinary error][${label}]`, {
+  console.error(`[UPLOAD DEBUG] Cloudinary error [${label}]`, {
+    error,
     file: file ? getFileMetadata(file) : undefined,
     name: error?.name,
     code: error?.code,
-    httpCode: error?.http_code,
+    http_code: error?.http_code,
     message: error?.message,
     stack: error?.stack,
   });
@@ -155,9 +174,23 @@ router.post("/", logIncomingUpload, productImagesMiddleware, async (req, res) =>
 
     assertCloudinaryConfigured();
 
-    console.log(`📸 Uploading ${req.files.length} images to Cloudinary...`);
+    console.log(
+      `[UPLOAD DEBUG] Uploading ${req.files.length} images to Cloudinary`
+    );
+
+    console.log(
+      "[UPLOAD DEBUG] Uploading files to Cloudinary",
+      req.files.length
+    );
 
     const uploadPromises = req.files.map((file) => {
+      console.log("[UPLOAD DEBUG] Uploading file:", getFileMetadata(file));
+      console.log("[UPLOAD DEBUG] File path:", file.path);
+      console.log(
+        "[UPLOAD DEBUG] Public ID:",
+        "Cloudinary-generated (not assigned before upload)"
+      );
+
       return new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
@@ -172,6 +205,12 @@ router.post("/", logIncomingUpload, productImagesMiddleware, async (req, res) =>
               reject(error);
               return;
             }
+
+            console.log("[UPLOAD DEBUG] Cloudinary response", {
+              secure_url: result?.secure_url,
+              public_id: result?.public_id,
+              bytes: result?.bytes,
+            });
 
             if (!result?.secure_url) {
               const resultError =
@@ -189,6 +228,10 @@ router.post("/", logIncomingUpload, productImagesMiddleware, async (req, res) =>
     });
 
     const imageUrls = await Promise.all(uploadPromises);
+
+    console.log("[UPLOAD DEBUG] Cloudinary uploads completed", {
+      imageUrls,
+    });
 
     res.status(200).json({
       message: "Images uploaded successfully",
@@ -226,6 +269,13 @@ router.post(
 
     assertCloudinaryConfigured();
 
+    console.log("[UPLOAD DEBUG] Uploading file:", getFileMetadata(req.file));
+    console.log("[UPLOAD DEBUG] File path:", req.file.path);
+    console.log(
+      "[UPLOAD DEBUG] Public ID:",
+      "Cloudinary-generated (not assigned before upload)"
+    );
+
     const imageUrl = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
@@ -240,6 +290,12 @@ router.post(
             return;
           }
 
+          console.log("[UPLOAD DEBUG] Cloudinary response", {
+            secure_url: result?.secure_url,
+            public_id: result?.public_id,
+            bytes: result?.bytes,
+          });
+
           resolve(result.secure_url);
         }
       );
@@ -251,10 +307,24 @@ router.post(
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.avatar = imageUrl;
+    console.log("[UPLOAD DEBUG] MongoDB payload before save", {
+      userId: user._id,
+      avatar: imageUrl,
+    });
     await user.save();
+    console.log("[UPLOAD DEBUG] MongoDB save completed", user);
 
     res.status(200).json({ message: "Avatar updated", imageUrl });
   } catch (error) {
+    if (error?.name === "ValidationError") {
+      console.error("[UPLOAD DEBUG] MongoDB validation errors", {
+        error,
+        message: error.message,
+        errors: error.errors,
+        stack: error.stack,
+      });
+    }
+
     logCloudinaryError("avatar route", error);
 
     const status =
