@@ -1,58 +1,45 @@
 import dotenv from "dotenv";
-import { BrevoClient } from "@getbrevo/brevo";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
-// ------------------ INIT CLIENT ------------------
-console.log("🔧 Initializing Brevo Client...");
-
-export const brevoClient = new BrevoClient({
-apiKey: process.env.BREVO_API_KEY,
-});
-
-// Debug env check
-console.log("🔑 API KEY PRESENT:", !!process.env.BREVO_API_KEY);
-console.log("📧 SENDER EMAIL:", process.env.BREVO_SENDER_EMAIL);
-
-// ------------------ SEND EMAIL ------------------
-export const sendEmail = async (toEmail, subject, htmlContent) => {
-try {
-console.log("📨 Sending Email...");
-console.log("➡ To:", toEmail);
-console.log("➡ Subject:", subject);
-
-
-// 🚨 MAIN FIX HERE
-const response = await brevoClient.sendTransacEmail({
-  sender: {
-    name: process.env.BREVO_SENDER_NAME || "SAC MTB",
-    email: process.env.BREVO_SENDER_EMAIL,
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: Number(process.env.EMAIL_PORT),
+  secure: process.env.EMAIL_SECURE === "true",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
-  to: [{ email: toEmail }],
-  subject,
-  htmlContent,
 });
 
-console.log("✅ Email API Response:", response);
-console.log(`📩 Email sent successfully → ${toEmail}`);
+transporter.verify((err) => {
+  if (err) {
+    console.error("❌ SMTP Connection Failed");
+    console.error(err);
+  } else {
+    console.log("✅ SMTP Connected Successfully");
+    console.log("📧 Using:", process.env.EMAIL_USER);
+  }
+});
 
-return true;
-//remove
+export const sendEmail = async (toEmail, subject, htmlContent) => {
+  try {
+    const info = await transporter.sendMail({
+      from: `"SAC MTB" <${process.env.EMAIL_USER}>`,
+      to: toEmail,
+      subject,
+      html: htmlContent,
+    });
 
-} catch (error) {
-console.error("❌ EMAIL ERROR OCCURRED");
+    console.log("✅ Email Sent");
+    console.log("Message ID:", info.messageId);
 
-//remove
-// Full debug logs
-console.error("👉 Error Message:", error.message);
-console.error("👉 Full Error:", error);
+    return true;
+  } catch (err) {
+    console.error("❌ Email Error");
+    console.error(err);
 
-if (error.response) {
-  console.error("👉 Brevo Response:", error.response);
-}
-
-return false;
-//remove
-
-}
+    return false;
+  }
 };
