@@ -63,12 +63,29 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
-    // ================= Status =================
-    isVerified: { type: Boolean, default: false },
-    isBlocked: { type: Boolean, default: false },
-    isAdmin: { type: Boolean, default: false },
+  // ================= Status =================
+isVerified: { type: Boolean, default: false },
+isBlocked: { type: Boolean, default: false },
+isAdmin: { type: Boolean, default: false },
+
+// ================= SAC Arena =================
+gameRegistered: {
+  type: Boolean,
+  default: false,
+},
+
+participationId: {
+  type: String,
+  unique: true,
+  sparse: true,
+},
+
+riderNumber: {
+  type: Number,
+},
+  
   },
-  { timestamps: true }
+{ timestamps: true }
 );
 
 

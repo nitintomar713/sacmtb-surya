@@ -1,275 +1,804 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import User from "../models/userModel.js";
-import { sendOTPEmail } from "../middleware/email.js";
-import { protect, admin } from "../middleware/authMiddleware.js";
 import { OAuth2Client } from "google-auth-library";
 import rateLimit from "express-rate-limit";
 
-const router = express.Router();
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+import User from "../models/userModel.js";
+import ArenaSetting from "../models/ArenaSetting.js";
 
-/* ================= RATE LIMIT ================= */
+import { sendOTPEmail } from "../middleware/email.js";
+import { protect, admin } from "../middleware/authMiddleware.js";
+
+const router = express.Router();
+
+const client = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID
+);
+
+/* =====================================================
+   RATE LIMIT
+===================================================== */
+
 const otpLimiter = rateLimit({
-windowMs: 60 * 1000,
-max: 3,
-message: { message: "Too many OTP requests. Try later." },
+  windowMs: 60 * 1000,
+  max: 3,
+  message: {
+    message: "Too many OTP requests. Try again later.",
+  },
 });
 
-/* ================= HELPERS ================= */
-const isValidEmail = (e) => /\S+@\S+.\S+/.test(e);
-const isNonEmpty = (s) => typeof s === "string" && s.trim().length > 0;
+/* =====================================================
+   HELPERS
+===================================================== */
+
+const isValidEmail = (email) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+const isNonEmpty = (value) =>
+  typeof value === "string" &&
+  value.trim().length > 0;
 
 const createToken = (user) =>
-jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET, {
-expiresIn: "7d",
+  jwt.sign(
+    {
+      id: user._id,
+      isAdmin: user.isAdmin,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "7d",
+    }
+  );
+
+const userResponse = (user) => ({
+  id: user._id,
+  name: user.name,
+  email: user.email,
+  phone: user.phone,
+  avatar: user.avatar,
+
+  participationId: user.participationId,
+  riderNumber: user.riderNumber,
+  gameRegistered: user.gameRegistered,
+
+  isVerified: user.isVerified,
+  isAdmin: user.isAdmin,
 });
 
-/* ================= REGISTER ================= */
+/* =====================================================
+   SAC ARENA REGISTRATION
+===================================================== */
+
+const registerArenaUser = async (user) => {
+  if (user.gameRegistered) {
+    return user;
+  }
+
+  const arena = await ArenaSetting.findOneAndUpdate(
+    {},
+
+    {
+      $setOnInsert: {
+        totalRegistered: 5000,
+        totalSlots: 20000,
+      },
+
+      $inc: {
+        totalRegistered: 1,
+      },
+    },
+
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+
+  user.riderNumber = arena.totalRegistered;
+
+  user.participationId =
+    `SACRIDER-${String(
+      arena.totalRegistered
+    ).padStart(6, "0")}`;
+
+  user.gameRegistered = true;
+
+  return user;
+};
+/* =====================================================
+   REGISTER
+===================================================== */
+
 router.post("/register", otpLimiter, async (req, res) => {
-try {
-const { name, email, password, phone } = req.body;
+  try {
+    const { name, email, password, phone } = req.body;
 
+    if (
+      !isNonEmpty(name) ||
+      !isValidEmail(email) ||
+      !isNonEmpty(password)
+    ) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
+    }
 
-if (!isNonEmpty(name) || !isValidEmail(email) || !isNonEmpty(password)) {
-  return res.status(400).json({ message: "All fields required" });
-}
+    let user = await User.findOne({
+      email: email.toLowerCase(),
+    });
 
-let user = await User.findOne({ email });
+    if (user && user.isVerified) {
+      return res.status(400).json({
+        message: "User already exists",
+      });
+    }
 
-if (user && user.isVerified) {
-  return res.status(400).json({ message: "User already exists" });
-}
+    const otp = crypto
+      .randomInt(100000, 999999)
+      .toString();
 
-const otp = crypto.randomInt(100000, 999999).toString();
+    const hashedOTP = crypto
+      .createHash("sha256")
+      .update(otp)
+      .digest("hex");
 
-if (user) {
-  user.otp = crypto.createHash("sha256").update(otp).digest("hex");
-  user.otpExpires = new Date(Date.now() + 5 * 60 * 1000);
-  await user.save();
-} else {
-  user = await User.create({
-    name,
-    email,
-    password,
-    phone,
-    otp: crypto.createHash("sha256").update(otp).digest("hex"),
-    otpExpires: new Date(Date.now() + 5 * 60 * 1000),
-  });
-}
+    if (user) {
+      user.name = name;
+      user.phone = phone;
+      user.password = password;
 
-await sendOTPEmail(email, otp);
+      user.otp = hashedOTP;
+      user.otpExpires = new Date(
+        Date.now() + 5 * 60 * 1000
+      );
+    } else {
+      user = new User({
+        name,
+        email: email.toLowerCase(),
+        phone,
+        password,
 
-res.status(201).json({ message: "OTP sent to email" });
+        otp: hashedOTP,
+        otpExpires: new Date(
+          Date.now() + 5 * 60 * 1000
+        ),
+      });
+    }
 
-} catch (err) {
-res.status(500).json({ message: "Register error" });
-}
+    await user.save();
+
+    await sendOTPEmail(email, otp);
+
+    return res.status(201).json({
+      success: true,
+      message: "OTP sent successfully",
+    });
+
+  } catch (error) {
+
+    console.error("Register Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Registration failed",
+    });
+  }
 });
 
-/* ================= VERIFY OTP ================= */
+
+/* =====================================================
+   VERIFY OTP
+===================================================== */
+
 router.post("/verify-otp", async (req, res) => {
-try {
-const { email, otp } = req.body;
 
+  try {
 
-const user = await User.findOne({ email }).select("+otp +otpExpires");
-if (!user) return res.status(404).json({ message: "User not found" });
+    const { email, otp } = req.body;
 
-const hashed = crypto.createHash("sha256").update(otp).digest("hex");
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+    }).select("+otp +otpExpires");
 
-if (hashed !== user.otp) {
-  return res.status(400).json({ message: "Invalid OTP" });
-}
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
 
-if (Date.now() > new Date(user.otpExpires)) {
-  return res.status(400).json({ message: "OTP expired" });
-}
+    if (!user.otp || !user.otpExpires) {
+      return res.status(400).json({
+        message: "OTP not generated",
+      });
+    }
 
-user.isVerified = true;
-user.otp = null;
-user.otpExpires = null;
+    const hashedOTP = crypto
+      .createHash("sha256")
+      .update(String(otp))
+      .digest("hex");
 
-await user.save();
+    if (hashedOTP !== user.otp) {
+      return res.status(400).json({
+        message: "Invalid OTP",
+      });
+    }
 
-const token = createToken(user);
+    if (Date.now() > user.otpExpires.getTime()) {
+      return res.status(400).json({
+        message: "OTP expired",
+      });
+    }
 
-res.json({
-  message: "Verified",
-  token,
-  user: {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-  },
+    user.isVerified = true;
+
+    user.otp = undefined;
+    user.otpExpires = undefined;
+
+    // Automatically register in SAC Arena
+    await registerArenaUser(user);
+
+    await user.save();
+
+    const token = createToken(user);
+
+    return res.json({
+      success: true,
+      message: "Account verified successfully",
+      token,
+      user: userResponse(user),
+    });
+
+  } catch (error) {
+
+    console.error("Verify OTP Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Verification failed",
+    });
+  }
+
 });
+/* =====================================================
+   LOGIN
+===================================================== */
 
-
-} catch {
-res.status(500).json({ message: "Verify error" });
-}
-});
-
-/* ================= LOGIN ================= */
 router.post("/login", async (req, res) => {
-try {
-const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
+    if (
+      !isValidEmail(email) ||
+      !isNonEmpty(password)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
 
-if (!isValidEmail(email) || !isNonEmpty(password)) {
-  return res.status(400).json({ message: "Email & password required" });
-}
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+    }).select("+password +otp +otpExpires");
 
-const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Email not registered",
+      });
+    }
 
-if (!user) {
-  return res.status(400).json({ message: "Email not registered" });
-}
+    const isMatch =
+      await user.matchPassword(password);
 
-const valid = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: "Incorrect password",
+      });
+    }
 
-if (!valid) {
-  return res.status(400).json({ message: "Incorrect password" });
-}
+    /* ----------------------------
+       EMAIL NOT VERIFIED
+    ----------------------------- */
 
-// 🔥 AUTO RESEND OTP
-if (!user.isVerified) {
-  const otp = crypto.randomInt(100000, 999999).toString();
+    if (!user.isVerified) {
 
-  user.otp = crypto.createHash("sha256").update(otp).digest("hex");
-  user.otpExpires = new Date(Date.now() + 5 * 60 * 1000);
-  await user.save();
+      const otp = crypto
+        .randomInt(100000, 999999)
+        .toString();
 
-  await sendOTPEmail(user.email, otp);
+      user.otp = crypto
+        .createHash("sha256")
+        .update(otp)
+        .digest("hex");
 
-  return res.status(403).json({
-    message: "Account not verified. OTP sent again.",
-  });
-}
+      user.otpExpires = new Date(
+        Date.now() + 5 * 60 * 1000
+      );
 
-const token = createToken(user);
+      await user.save();
 
-res.json({
-  message: "Login success",
-  token,
-  user: {
-    id: user._id,
-    name: user.name,
-    email: user.email,
-  },
+      await sendOTPEmail(
+        user.email,
+        otp
+      );
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "Account not verified. A new OTP has been sent.",
+      });
+    }
+
+    /* ----------------------------
+       AUTO REGISTER IN ARENA
+    ----------------------------- */
+
+    await registerArenaUser(user);
+
+    await user.save();
+
+    const token =
+      createToken(user);
+
+    return res.json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: userResponse(user),
+    });
+
+  } catch (error) {
+
+    console.error(
+      "Login Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Login failed",
+    });
+  }
 });
 
 
-} catch {
-res.status(500).json({ message: "Login error" });
-}
-});
+/* =====================================================
+   GOOGLE LOGIN
+===================================================== */
 
-/* ================= GOOGLE LOGIN ================= */
-router.post("/google-login", async (req, res) => {
-try {
-const { token } = req.body;
+router.post(
+  "/google-login",
+  async (req, res) => {
+
+    try {
+
+      const { token } = req.body;
+
+      const ticket =
+        await client.verifyIdToken({
+
+          idToken: token,
+
+          audience:
+            process.env.GOOGLE_CLIENT_ID,
+
+        });
+
+      const payload =
+        ticket.getPayload();
+
+      const {
+        email,
+        name,
+        picture,
+        sub,
+      } = payload;
+
+      let user =
+        await User.findOne({
+          email:
+            email.toLowerCase(),
+        });
+
+      /* ----------------------------
+         CREATE USER
+      ----------------------------- */
+
+      if (!user) {
+
+        user =
+          await User.create({
+
+            name,
+
+            email:
+              email.toLowerCase(),
+
+            avatar:
+              picture,
+
+            googleId:
+              sub,
+
+            isVerified:
+              true,
+
+          });
+
+      }
+
+      /* ----------------------------
+         UPDATE GOOGLE INFO
+      ----------------------------- */
+
+      else {
+
+        if (
+          !user.googleId
+        ) {
+
+          user.googleId =
+            sub;
+
+        }
+
+        if (
+          picture &&
+          !user.avatar
+        ) {
+
+          user.avatar =
+            picture;
+
+        }
+
+      }
+
+      /* ----------------------------
+         AUTO REGISTER
+      ----------------------------- */
+
+      await registerArenaUser(
+        user
+      );
+
+      await user.save();
+
+      const jwtToken =
+        createToken(user);
+
+      return res.json({
+
+        success: true,
+
+        message:
+          "Google login successful",
+
+        token:
+          jwtToken,
+
+        user:
+          userResponse(user),
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Google Login Error:",
+        error
+      );
+
+      return res.status(500).json({
+
+        success: false,
+
+        message:
+          "Google login failed",
+
+      });
+
+    }
+  }
+);
+/* =====================================================
+   FORGOT PASSWORD
+===================================================== */
+
+router.post(
+  "/forgot-password",
+  otpLimiter,
+  async (req, res) => {
+    try {
+
+      const { email } = req.body;
+
+      if (!isValidEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid email is required",
+        });
+      }
+
+      const user = await User.findOne({
+        email: email.toLowerCase(),
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      const otp = crypto
+        .randomInt(100000, 999999)
+        .toString();
+
+      user.otp = crypto
+        .createHash("sha256")
+        .update(otp)
+        .digest("hex");
+
+      user.otpExpires = new Date(
+        Date.now() + 5 * 60 * 1000
+      );
+
+      await user.save();
+
+      await sendOTPEmail(
+        user.email,
+        otp
+      );
+
+      return res.json({
+        success: true,
+        message:
+          "Password reset OTP sent successfully",
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Forgot Password Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to process request",
+      });
+
+    }
+  }
+);
 
 
-const ticket = await client.verifyIdToken({
-  idToken: token,
-  audience: process.env.GOOGLE_CLIENT_ID,
-});
+/* =====================================================
+   RESET PASSWORD
+===================================================== */
 
-const { email, name, picture } = ticket.getPayload();
+router.post(
+  "/reset-password",
+  async (req, res) => {
 
-let user = await User.findOne({ email });
+    try {
 
-if (!user) {
-  user = await User.create({
-    name,
-    email,
-    avatar: picture,
-    isVerified: true,
-  });
-}
+      const {
+        email,
+        otp,
+        newPassword,
+      } = req.body;
 
-const jwtToken = createToken(user);
+      if (
+        !isValidEmail(email) ||
+        !isNonEmpty(newPassword)
+      ) {
 
-res.json({
-  message: "Google login success",
-  token: jwtToken,
-  user: { id: user._id, name, email },
-});
+        return res.status(400).json({
+          success: false,
+          message:
+            "Email, OTP and password are required",
+        });
+
+      }
+
+      const user =
+        await User.findOne({
+          email:
+            email.toLowerCase(),
+        }).select(
+          "+otp +otpExpires +password"
+        );
+
+      if (!user) {
+
+        return res.status(404).json({
+          success: false,
+          message:
+            "User not found",
+        });
+
+      }
+
+      if (
+        !user.otp ||
+        !user.otpExpires
+      ) {
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "OTP not found",
+        });
+
+      }
+
+      const hashedOTP =
+        crypto
+          .createHash("sha256")
+          .update(String(otp))
+          .digest("hex");
+
+      if (
+        hashedOTP !== user.otp
+      ) {
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid OTP",
+        });
+
+      }
+
+      if (
+        Date.now() >
+        user.otpExpires.getTime()
+      ) {
+
+        return res.status(400).json({
+          success: false,
+          message:
+            "OTP expired",
+        });
+
+      }
+
+      user.password =
+        newPassword;
+
+      user.otp = undefined;
+      user.otpExpires = undefined;
+      user.otpAttempts = 0;
+
+      await user.save();
+
+      return res.json({
+        success: true,
+        message:
+          "Password reset successful",
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Reset Password Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Password reset failed",
+      });
+
+    }
+  }
+);
 
 
-} catch {
-res.status(500).json({ message: "Google login failed" });
-}
-});
+/* =====================================================
+   PROFILE
+===================================================== */
 
-/* ================= FORGOT PASSWORD ================= */
-router.post("/forgot-password", otpLimiter, async (req, res) => {
-try {
-const { email } = req.body;
+router.get(
+  "/profile",
+  protect,
+  async (req, res) => {
 
+    try {
 
-const user = await User.findOne({ email });
+      const user =
+        await User.findById(
+          req.user._id
+        );
 
-if (!user) return res.status(404).json({ message: "User not found" });
+      if (!user) {
 
-const otp = crypto.randomInt(100000, 999999).toString();
+        return res.status(404).json({
+          success: false,
+          message:
+            "User not found",
+        });
 
-user.otp = crypto.createHash("sha256").update(otp).digest("hex");
-user.otpExpires = new Date(Date.now() + 5 * 60 * 1000);
-await user.save();
+      }
 
-await sendOTPEmail(email, otp);
+      return res.json({
+        success: true,
+        user:
+          userResponse(user),
+      });
 
-res.json({ message: "OTP sent for reset" });
+    } catch (error) {
 
+      console.error(
+        "Profile Error:",
+        error
+      );
 
-} catch {
-res.status(500).json({ message: "Error" });
-}
-});
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to fetch profile",
+      });
 
-/* ================= RESET PASSWORD ================= */
-router.post("/reset-password", async (req, res) => {
-try {
-const { email, otp, newPassword } = req.body;
-
-
-const user = await User.findOne({ email }).select("+otp +otpExpires");
-
-const hashed = crypto.createHash("sha256").update(otp).digest("hex");
-
-if (hashed !== user.otp) return res.status(400).json({ message: "Invalid OTP" });
-
-if (Date.now() > new Date(user.otpExpires)) {
-  return res.status(400).json({ message: "OTP expired" });
-}
-
-user.password = newPassword;
-user.otp = null;
-user.otpExpires = null;
-
-await user.save();
-
-res.json({ message: "Password reset successful" });
+    }
+  }
+);
 
 
-} catch {
-res.status(500).json({ message: "Reset error" });
-}
-});
+/* =====================================================
+   ADMIN - ALL USERS
+===================================================== */
 
-/* ================= PROFILE ================= */
-router.get("/profile", protect, async (req, res) => {
-const user = await User.findById(req.user._id);
-res.json(user);
-});
+router.get(
+  "/",
+  protect,
+  admin,
+  async (req, res) => {
 
-/* ================= ADMIN ================= */
-router.get("/", protect, admin, async (req, res) => {
-const users = await User.find();
-res.json(users);
-});
+    try {
+
+      const users =
+        await User.find()
+          .sort({
+            createdAt: -1,
+          });
+
+      return res.json({
+        success: true,
+        count: users.length,
+        users:
+          users.map(
+            userResponse
+          ),
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Admin Users Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to fetch users",
+      });
+
+    }
+  }
+);
+
+
+/* =====================================================
+   EXPORT
+===================================================== */
 
 export default router;
