@@ -1,15 +1,44 @@
 import express from "express";
-import { protect } from "../middleware/authMiddleware.js";
-import {
-  updateScore,
-  getLeaderboard,
-  getUserScores,
-} from "../middleware/gameScoreMiddleware.js";
+import ArenaSetting from "../models/ArenaSetting.js";
 
 const router = express.Router();
 
-router.post("/update", protect, updateScore);
-router.get("/leaderboard/:gameName", getLeaderboard);
-router.get("/my-scores", protect, getUserScores);
+/* =========================================
+   LIVE ARENA STATS
+========================================= */
+
+router.get("/stats", async (req, res) => {
+  try {
+
+    let arena = await ArenaSetting.findOne();
+
+    if (!arena) {
+
+      arena = await ArenaSetting.create({
+        totalRegistered: 5000,
+        totalSlots: 20000,
+        launchDate: new Date("2027-01-01"),
+      });
+
+    }
+
+    return res.json({
+      success: true,
+      totalRegistered: arena.totalRegistered,
+      totalSlots: arena.totalSlots,
+      launchDate: arena.launchDate,
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load arena stats",
+    });
+
+  }
+});
 
 export default router;

@@ -71,40 +71,40 @@ const userResponse = (user) => ({
 ===================================================== */
 
 const registerArenaUser = async (user) => {
+
   if (user.gameRegistered) {
     return user;
   }
 
-  const arena = await ArenaSetting.findOneAndUpdate(
-    {},
+  // Find settings document
+  let arena = await ArenaSetting.findOne();
 
-    {
-      $setOnInsert: {
-        totalRegistered: 5000,
-        totalSlots: 20000,
-      },
+  // First time only
+  if (!arena) {
 
-      $inc: {
-        totalRegistered: 1,
-      },
-    },
+    arena = await ArenaSetting.create({
+      totalRegistered: 5000,
+      totalSlots: 20000,
+      launchDate: new Date("2027-01-01"),
+    });
 
-    {
-      new: true,
-      upsert: true,
-    }
-  );
+  }
 
+  // Increment counter
+  arena.totalRegistered += 1;
+
+  await arena.save();
+
+  // Assign values
   user.riderNumber = arena.totalRegistered;
 
   user.participationId =
-    `SACRIDER-${String(
-      arena.totalRegistered
-    ).padStart(6, "0")}`;
+    `SACRIDER-${String(arena.totalRegistered).padStart(6, "0")}`;
 
   user.gameRegistered = true;
 
   return user;
+
 };
 /* =====================================================
    REGISTER
@@ -192,10 +192,12 @@ router.post("/register", otpLimiter, async (req, res) => {
 ===================================================== */
 
 router.post("/verify-otp", async (req, res) => {
-
   try {
-
     const { email, otp } = req.body;
+
+    console.log("========== VERIFY OTP ==========");
+    console.log("Email:", email);
+    console.log("OTP:", otp);
 
     const user = await User.findOne({
       email: email.toLowerCase(),
@@ -203,12 +205,16 @@ router.post("/verify-otp", async (req, res) => {
 
     if (!user) {
       return res.status(404).json({
+        success: false,
         message: "User not found",
       });
     }
 
+    console.log("User Found:", user.email);
+
     if (!user.otp || !user.otpExpires) {
       return res.status(400).json({
+        success: false,
         message: "OTP not generated",
       });
     }
@@ -218,29 +224,41 @@ router.post("/verify-otp", async (req, res) => {
       .update(String(otp))
       .digest("hex");
 
+    console.log("Entered Hash:", hashedOTP);
+    console.log("DB Hash:", user.otp);
+
     if (hashedOTP !== user.otp) {
       return res.status(400).json({
+        success: false,
         message: "Invalid OTP",
       });
     }
 
     if (Date.now() > user.otpExpires.getTime()) {
       return res.status(400).json({
+        success: false,
         message: "OTP expired",
       });
     }
 
     user.isVerified = true;
-
     user.otp = undefined;
     user.otpExpires = undefined;
 
-    // Automatically register in SAC Arena
+    console.log("Before Arena Registration");
+
     await registerArenaUser(user);
+
+    console.log("Participation ID:", user.participationId);
+    console.log("Rider Number:", user.riderNumber);
 
     await user.save();
 
+    console.log("User Saved");
+
     const token = createToken(user);
+
+    console.log("JWT Created");
 
     return res.json({
       success: true,
@@ -249,16 +267,21 @@ router.post("/verify-otp", async (req, res) => {
       user: userResponse(user),
     });
 
-  } catch (error) {
+  }  catch (error) {
 
-    console.error("Verify OTP Error:", error);
+  console.log("================================");
+  console.log("VERIFY OTP ERROR");
+  console.log(error);
+  console.log(error.message);
+  console.log(error.stack);
+  console.log("================================");
 
-    return res.status(500).json({
-      success: false,
-      message: "Verification failed",
-    });
-  }
+  return res.status(500).json({
+    success: false,
+    message: error.message
+  });
 
+}
 });
 /* =====================================================
    LOGIN
